@@ -118,9 +118,9 @@
 
         <div class="card-head" style="margin:22px 0 14px"><span class="step">2</span><h2>Request settings</h2></div>
         <div class="codes">
-          <div><label for="organization-code" title="Organization code">Organization</label><input id="organization-code" type="text" value="U002" required></div>
-          <div><label for="group-code" title="Group code">Group</label><input id="group-code" type="text" value="D600" required></div>
-          <div><label for="source-code" title="Source code">Source</label><input id="source-code" type="text" value="D600" required></div>
+          <div><label for="organization-code" title="Organization code">Organization</label><input id="organization-code" type="text" value="U002" readonly required></div>
+          <div><label for="group-code" title="Group code">Group</label><input id="group-code" type="text" value="D600" readonly required></div>
+          <div><label for="source-code" title="Source code">Source</label><input id="source-code" type="text" value="D600" readonly required></div>
         </div>
       </form>
     </aside>
@@ -213,7 +213,6 @@
     $("toggle-token").setAttribute("aria-pressed", String(visible)); $("toggle-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Bearer token`); $("toggle-token").title = `${visible ? "Hide" : "Show"} Bearer token`;
     $("show-token-icon").hidden = visible; $("hide-token-icon").hidden = !visible;
   };
-  ["organization-code", "group-code", "source-code"].forEach(id => { const i = $(id); i.value = store.get(`service-guid-${id}`) || i.value; i.oninput = () => store.set(`service-guid-${id}`, i.value); });
 
   function resetForNewBatch() { if (socket) socket.close(); if (demo) demo.cancelled = true; jobId = null; demo = null; $("progress-card").hidden = true; $("download").hidden = true; $("retry").hidden = true; $("cancel").disabled = true; $("start").disabled = false; $("completion").textContent = ""; showError(""); }
   $("add-guid").onclick = () => { addGuidRow(); updateCount(); };
