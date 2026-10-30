@@ -5,8 +5,11 @@ It supports:
 
 - Bearer token entry per processing session
 - Editable organization, group, and source codes (defaulting to U002, D600, and D600)
-- Direct serviceGUID entry in an editable grid
-- Pasting one or more serviceGUID values into the grid
+- Eight-column table for Date, serviceguid, document_number, tenant_code, route_code, document_date, failure_reason, and Response
+- Pasting tab-separated spreadsheet rows from the first Date cell; pasted values are read-only and Date plus serviceguid are required for every row
+- One batch per table: clear the table to paste another batch; clearing cancels active processing and removes the current results
+- Stops and highlights the token when the first GUID returns an upstream failure other than a network error, or when the API explicitly reports an authentication failure
+- Marks the token field with a red Expired indicator when an authentication error is confirmed
 - Live progress, cancellation, retry of failed IDs, and CSV result download
 
 ## Run on localhost (Windows)

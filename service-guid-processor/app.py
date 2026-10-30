@@ -70,6 +70,39 @@ def empty_result(guid: str, status: str, response: str, http_code: Any = "") -> 
     }
 
 
+def is_authentication_error(http_code: Any, response: str) -> bool:
+    if http_code in {401, 403}:
+        return True
+    message = re.sub(r"[\s_-]+", " ", response.lower())
+    return any(
+        phrase in message
+        for phrase in (
+            "token expired",
+            "token has expired",
+            "token has been expired",
+            "token is expired",
+            "expired token",
+            "invalid token",
+            "token is invalid",
+            "unauthorized",
+            "not authorized",
+            "authentication failed",
+            "authentication token",
+        )
+    )
+
+
+def is_network_error(result: dict[str, Any]) -> bool:
+    return not result["HTTP Code"] and result["Response"].startswith("REQUEST ERROR:")
+
+
+def is_failed_without_response(result: dict[str, Any]) -> bool:
+    if is_network_error(result):
+        return False
+    response = result["Response"].strip().lower()
+    return not response or response == "no response"
+
+
 def clean_response(response: str) -> str:
     try:
         data = json.loads(response)
@@ -164,6 +197,13 @@ def run_job(job_id: str) -> None:
             except Exception as exc:
                 result = empty_result(guid, "Failed", f"UNEXPECTED ERROR: {exc}", "")
 
+            auth_expired = is_authentication_error(result["HTTP Code"], result["Response"])
+            if position == 0 and result["Status"] == "Failed" and not is_network_error(result):
+                auth_expired = True
+            if is_failed_without_response(result):
+                auth_expired = True
+            if auth_expired:
+                result["Status"] = "Failed"
             with job["lock"]:
                 job["results"].append(result)
                 job["completed"] += 1
@@ -171,6 +211,10 @@ def run_job(job_id: str) -> None:
                     job["successful"] += 1
                 else:
                     job["failed"] += 1
+            if auth_expired:
+                job["auth_expired"] = True
+                job["status_message"] = "Dcode Token Has Been Expired. Processing stopped."
+                break
             job["status_message"] = "Request completed."
             if position < len(job["guids"]) - 1 and not job["cancel_event"].wait(DELAY_SECONDS):
                 continue
@@ -179,7 +223,10 @@ def run_job(job_id: str) -> None:
 
     job["current"] = ""
     job["state"] = "cancelled" if job["cancel_event"].is_set() else "completed"
-    job["status_message"] = "Processing cancelled." if job["state"] == "cancelled" else "Processing complete."
+    if job["state"] == "cancelled":
+        job["status_message"] = "Processing cancelled."
+    elif not job["auth_expired"]:
+        job["status_message"] = "Processing complete."
 
 def create_job(
     token: str,
@@ -199,6 +246,7 @@ def create_job(
         "results": [],
         "state": "starting",
         "status_message": "Starting...",
+        "auth_expired": False,
         "current": "",
         "completed": 0,
         "successful": 0,
@@ -287,6 +335,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "successful": job["successful"],
         "failed": job["failed"],
         "remaining": len(job["guids"]) - job["completed"],
+        "auth_expired": job["auth_expired"],
         "results": results_snapshot,
     }
 
