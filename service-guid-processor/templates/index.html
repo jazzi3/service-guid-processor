@@ -16,6 +16,12 @@
     input, textarea, button { font: inherit; } input, textarea { box-sizing: border-box; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
     input[type=password], input[type=file] { width: 100%; } textarea { min-height: 100px; width: 100%; resize: vertical; }
     .token-row { display: flex; gap: 8px; } .token-row input { flex: 1; }
+    .token-input-wrap { display: flex; flex: 1; gap: 8px; min-width: 0; }
+    .token-input-wrap input { flex: 1; min-width: 0; }
+    .token-visibility { display: inline-flex; align-items: center; justify-content: center; margin: 0; padding: 8px 12px; }
+    .token-visibility svg { width: 20px; height: 20px; }
+    .id-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .id-fields input { width: 100%; }
     .options { display: grid; grid-template-columns: 1fr; gap: 18px; }
     button { border: 0; border-radius: 9px; padding: 11px 17px; cursor: pointer; font-weight: 800; background: #1769aa; color: white; margin: 12px 8px 0 0; transition: transform .15s, box-shadow .15s, background .15s; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 12px #1769aa33; background: #125987; }
@@ -37,7 +43,7 @@
     details summary { cursor: pointer; color: #1769aa; font-weight: 700; } details pre { white-space: pre-wrap; margin: 8px 0 0; font: 12px ui-monospace, monospace; color: #475569; }
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; background: #172033; color: white; padding: 13px 16px; border-radius: 10px; box-shadow: 0 8px 25px #17203344; opacity: 0; transform: translateY(12px); transition: .2s; pointer-events: none; }
     .toast.show { opacity: 1; transform: translateY(0); } .toast.success { background: #087443; } .toast.error { background: #b42318; }
-    @media (max-width: 700px) { .options, .stats { grid-template-columns: 1fr; } .hero { align-items: flex-start; flex-direction: column; } .token-row { flex-direction: column; } .token-row button { width: 100%; } body { padding: 18px 10px; } .card { padding: 16px; } }
+    @media (max-width: 700px) { .options, .stats, .id-fields { grid-template-columns: 1fr; } .hero { align-items: flex-start; flex-direction: column; } .token-row { flex-direction: column; } .token-row button { width: 100%; } body { padding: 18px 10px; } .card { padding: 16px; } }
   </style>
 </head>
 <body>
@@ -45,7 +51,22 @@
   <section class="card">
     <form id="start-form">
       <div class="section-title"><h2>Authentication</h2><span class="status-pill">Token saved locally</span></div>
-      <label for="token">Bearer token</label><div class="token-row"><input id="token" type="password" required autocomplete="off" placeholder="Saved locally until you update it"><button type="button" id="save-token" class="secondary">Save Token</button></div>
+      <label for="token">Bearer token</label>
+      <div class="token-row">
+        <div class="token-input-wrap">
+          <input id="token" type="password" required autocomplete="off" placeholder="Saved locally until you update it">
+          <button type="button" id="toggle-token" class="secondary token-visibility" aria-label="Show Bearer token" aria-pressed="false" title="Show Bearer token">
+            <svg id="show-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <svg id="hide-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m3 3 18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3 3.8"></path><path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8"></path></svg>
+          </button>
+        </div>
+        <button type="button" id="save-token" class="secondary">Save Token</button>
+      </div>
+      <div class="id-fields">
+        <div><label for="organization-code">Organization Code</label><input id="organization-code" type="text" value="U002" required></div>
+        <div><label for="group-code">Group Code</label><input id="group-code" type="text" value="D600" required></div>
+        <div><label for="source-code">Source Code</label><input id="source-code" type="text" value="D600" required></div>
+      </div>
       <div class="options"><div><label for="guid-input">Paste serviceGUID values</label><textarea id="guid-input" placeholder="Paste one serviceGUID per line"></textarea></div></div>
       <div class="toolbar"><button id="start">Start Processing</button><span id="input-count" class="muted"></span></div>
     </form>
@@ -93,13 +114,27 @@
     }
     $("save-token").onclick = () => { const token = $("token").value.trim(); if (!token) return showError("Enter a token before saving it."); localStorage.setItem("service-guid-bearer-token", token); showToast("Token saved for future requests."); };
     $("token").value = localStorage.getItem("service-guid-bearer-token") || "";
+    $("toggle-token").onclick = () => {
+      const visible = $("token").type === "password";
+      $("token").type = visible ? "text" : "password";
+      $("toggle-token").setAttribute("aria-pressed", String(visible));
+      $("toggle-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Bearer token`);
+      $("toggle-token").title = `${visible ? "Hide" : "Show"} Bearer token`;
+      $("show-token-icon").hidden = visible;
+      $("hide-token-icon").hidden = !visible;
+    };
+    ["organization-code", "group-code", "source-code"].forEach(id => {
+      const input = $(id);
+      input.value = localStorage.getItem(`service-guid-${id}`) || input.value;
+      input.oninput = () => localStorage.setItem(`service-guid-${id}`, input.value);
+    });
     function resetForNewBatch() { if (socket) socket.close(); jobId = null; $("progress-card").hidden = true; $("results-card").hidden = true; $("start").disabled = false; $("completion").textContent = ""; showError(""); }
     $("add-guid").onclick = () => { addGuidRow(); updateCount(); };
     $("guid-input").oninput = () => { resetForNewBatch(); renderGrid($("guid-input").value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)); };
     renderGrid([]);
     function filterRows() { const query = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => row.hidden = Boolean(query) && !row.textContent.toLowerCase().includes(query)); }
     $("result-search").oninput = filterRows;
-    $("start-form").onsubmit = async e => { e.preventDefault(); showError(""); const token = $("token").value.trim(), direct = gridValues().join("\n"); if (!token || !direct.trim()) return showError("Token and an input are required."); localStorage.setItem("service-guid-bearer-token", token); const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct); $("start").disabled = true; try { const response = await fetch("/api/jobs", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.detail); connect(data.job_id); } catch (err) { showError(err.message); $("start").disabled = false; } };
+    $("start-form").onsubmit = async e => { e.preventDefault(); showError(""); const token = $("token").value.trim(), direct = gridValues().join("\n"); if (!token || !direct.trim()) return showError("Token and an input are required."); localStorage.setItem("service-guid-bearer-token", token); const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct); form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim()); $("start").disabled = true; try { const response = await fetch("/api/jobs", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.detail); connect(data.job_id); } catch (err) { showError(err.message); $("start").disabled = false; } };
     function connect(id) { jobId = id; socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/jobs/${id}`); socket.onmessage = event => { const data = JSON.parse(event.data); render(data); if (data.state === "completed" || data.state === "cancelled") socket.close(); }; socket.onerror = () => showError("Live progress connection failed. Refresh to reconnect."); }
     $("cancel").onclick = async () => { if (jobId) await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" }); }; $("download").onclick = () => { location.href = `/api/jobs/${jobId}/download`; };
     $("retry").onclick = async () => { const response = await fetch(`/api/jobs/${jobId}/retry`, { method: "POST" }); const data = await response.json(); if (!response.ok) return showError(data.detail); $("completion").textContent = ""; $("retry").hidden = true; connect(data.job_id); };

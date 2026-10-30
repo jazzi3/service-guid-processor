@@ -4,6 +4,7 @@ This local web interface runs the same API request flow as `NG failed orders.py`
 It supports:
 
 - Bearer token entry per processing session
+- Editable organization, group, and source codes (defaulting to U002, D600, and D600)
 - Direct serviceGUID entry in an editable grid
 - Pasting one or more serviceGUID values into the grid
 - Live progress, cancellation, retry of failed IDs, and CSV result download

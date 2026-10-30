@@ -94,11 +94,16 @@ def parse_guids(text: str) -> list[str]:
     return values
 
 
-def build_payload(service_guid: str) -> dict[str, Any]:
+def build_payload(
+    service_guid: str,
+    organization_code: str = "U002",
+    group_code: str = "D600",
+    source_code: str = "D600",
+) -> dict[str, Any]:
     return {
-        "organizationCode": "U002",
-        "groupCode": "D600",
-        "sourceCode": "D600",
+        "organizationCode": organization_code,
+        "groupCode": group_code,
+        "sourceCode": source_code,
         "job": None,
         "sourceQueryParams": {"serviceGUID": service_guid},
         "identification": "node",
@@ -144,7 +149,12 @@ def run_job(job_id: str) -> None:
                     api_url,
                     params=request_params,
                     headers=headers,
-                    json=build_payload(guid),
+                    json=build_payload(
+                        guid,
+                        job["organization_code"],
+                        job["group_code"],
+                        job["source_code"],
+                    ),
                     timeout=REQUEST_TIMEOUT,
                 )
                 status = "Success" if response.ok else "Failed"
@@ -171,12 +181,21 @@ def run_job(job_id: str) -> None:
     job["state"] = "cancelled" if job["cancel_event"].is_set() else "completed"
     job["status_message"] = "Processing cancelled." if job["state"] == "cancelled" else "Processing complete."
 
-def create_job(token: str, guids: list[str]) -> str:
+def create_job(
+    token: str,
+    guids: list[str],
+    organization_code: str = "U002",
+    group_code: str = "D600",
+    source_code: str = "D600",
+) -> str:
     job_id = uuid.uuid4().hex
     jobs[job_id] = {
         "id": job_id,
         "token": token,
         "guids": guids,
+        "organization_code": organization_code,
+        "group_code": group_code,
+        "source_code": source_code,
         "results": [],
         "state": "starting",
         "status_message": "Starting...",
@@ -206,6 +225,9 @@ async def health() -> dict[str, str]:
 async def start_job(
     bearer_token: str = Form(...),
     guids: str = Form(""),
+    organization_code: str = Form("U002"),
+    group_code: str = Form("D600"),
+    source_code: str = Form("D600"),
 ) -> dict[str, Any]:
     token = bearer_token.strip()
     if not token:
@@ -213,7 +235,10 @@ async def start_job(
     values = parse_guids(guids)
     if not values:
         raise HTTPException(status_code=400, detail="Enter at least one serviceGUID.")
-    job_id = create_job(token, values)
+    codes = [organization_code.strip(), group_code.strip(), source_code.strip()]
+    if not all(codes):
+        raise HTTPException(status_code=400, detail="Organization, group, and source codes are required.")
+    job_id = create_job(token, values, *codes)
     return {"job_id": job_id, "total": len(values)}
 
 
@@ -234,7 +259,13 @@ async def retry_job(job_id: str) -> dict[str, Any]:
     failed_guids = [row["serviceGUID"] for row in job["results"] if row["Status"] == "Failed"]
     if not failed_guids:
         raise HTTPException(status_code=400, detail="There are no failed GUIDs to retry.")
-    retry_id = create_job(job["token"], failed_guids)
+    retry_id = create_job(
+        job["token"],
+        failed_guids,
+        job["organization_code"],
+        job["group_code"],
+        job["source_code"],
+    )
     return {"job_id": retry_id, "total": len(failed_guids)}
 
 
