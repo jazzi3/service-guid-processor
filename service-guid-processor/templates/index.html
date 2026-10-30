@@ -161,7 +161,7 @@
 <div id="toast" class="toast"></div>
 
 <script>
-  const DEMO_FALLBACK = true; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
+  const DEMO_FALLBACK = false; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
   const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer;
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
