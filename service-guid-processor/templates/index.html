@@ -1,143 +1,281 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Service GUID Processor</title>
-  <style>
-    :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #eef4f8; }
-    * { box-sizing: border-box; } body { max-width: 1240px; margin: 0 auto; padding: 30px 18px; }
-    h1 { margin: 0; letter-spacing: -.03em; } h2 { margin: 0 0 14px; font-size: 18px; } .muted { color: #667085; }
-    .hero { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 22px; }
-    .hero p { margin: 7px 0 0; } .badge { background: #dff7e8; color: #087443; border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 800; white-space: nowrap; }
-    .card { background: white; border: 1px solid #dce7ee; border-radius: 16px; padding: 22px; margin: 16px 0; box-shadow: 0 8px 25px #1a365d12; }
-    .section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
-    label { display: block; font-weight: 700; margin: 14px 0 7px; }
-    input, textarea, button { font: inherit; } input, textarea { box-sizing: border-box; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
-    input[type=password], input[type=file] { width: 100%; } textarea { min-height: 100px; width: 100%; resize: vertical; }
-    .token-row { display: flex; gap: 8px; } .token-row input { flex: 1; }
-    .token-input-wrap { display: flex; flex: 1; gap: 8px; min-width: 0; }
-    .token-input-wrap input { flex: 1; min-width: 0; }
-    .token-visibility { display: inline-flex; align-items: center; justify-content: center; margin: 0; padding: 8px 12px; }
-    .token-visibility svg { width: 20px; height: 20px; }
-    .id-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .id-fields input { width: 100%; }
-    .options { display: grid; grid-template-columns: 1fr; gap: 18px; }
-    button { border: 0; border-radius: 9px; padding: 11px 17px; cursor: pointer; font-weight: 800; background: #1769aa; color: white; margin: 12px 8px 0 0; transition: transform .15s, box-shadow .15s, background .15s; }
-    button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 12px #1769aa33; background: #125987; }
-    button.secondary { background: #64748b; } button.danger { background: #c53030; } button:disabled { opacity: .45; cursor: not-allowed; }
-    .guid-grid { border: 1px solid #cbd5e1; border-radius: 8px; overflow: auto; max-height: 360px; }
-    .guid-grid table, .table-wrap table { border-collapse: collapse; width: 100%; min-width: 680px; }
-    th, td { padding: 9px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; position: sticky; top: 0; } .guid-grid input { width: 100%; }
-    .guid-grid .response-cell { max-width: 320px; word-break: break-word; white-space: pre-wrap; }
-    .grid-actions { display: flex; gap: 8px; } .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-    .stat { background: #f8fafc; padding: 14px; border-radius: 9px; text-align: center; } .stat b { display: block; font-size: 24px; }
-    .progress { height: 13px; background: #e6eef3; border-radius: 99px; overflow: hidden; } .bar { height: 100%; background: linear-gradient(90deg, #1769aa, #18a77a); width: 0%; transition: width .3s; }
-    .current { font-family: ui-monospace, monospace; word-break: break-all; } .error { color: #b42318; font-weight: 700; }
-    .table-wrap { overflow: auto; max-height: 430px; } .success { color: #087443; font-weight: 800; } .failed { color: #b42318; font-weight: 800; }
-    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: #f1f5f9; font-size: 12px; font-weight: 800; }
-    .status-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
-    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .toolbar button { margin: 0; }
-    .search { max-width: 320px; width: 100%; } .results-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-    details summary { cursor: pointer; color: #1769aa; font-weight: 700; } details pre { white-space: pre-wrap; margin: 8px 0 0; font: 12px ui-monospace, monospace; color: #475569; }
-    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; background: #172033; color: white; padding: 13px 16px; border-radius: 10px; box-shadow: 0 8px 25px #17203344; opacity: 0; transform: translateY(12px); transition: .2s; pointer-events: none; }
-    .toast.show { opacity: 1; transform: translateY(0); } .toast.success { background: #087443; } .toast.error { background: #b42318; }
-    @media (max-width: 700px) { .options, .stats, .id-fields { grid-template-columns: 1fr; } .hero { align-items: flex-start; flex-direction: column; } .token-row { flex-direction: column; } .token-row button { width: 100%; } body { padding: 18px 10px; } .card { padding: 16px; } }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service GUID Processor</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --surface:#fff; --soft:#f8fafc; --border:#e3e8f0; --text:#111827; --muted:#667085;
+    --primary:#4f46e5; --primary-h:#4338ca; --primary-soft:#eef0ff; --ok:#0f9d63; --ok-soft:#e1f7ec;
+    --bad:#d92d20; --bad-soft:#fdeceb; --shadow:0 1px 2px #10182808, 0 8px 24px #1018280a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#0e1320; --surface:#161d2e; --soft:#1b2438; --border:#27324a; --text:#e8ecf5; --muted:#93a0b8;
+    --primary:#818cf8; --primary-h:#6f7af0; --primary-soft:#23285a; --ok:#34d399; --ok-soft:#10382c;
+    --bad:#f87171; --bad-soft:#40201f; --shadow:none; color-scheme: dark; } }
+  * { box-sizing:border-box; } [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; }
+  .app { max-width:1280px; margin:0 auto; padding:24px 20px 64px; }
+  h1 { margin:0; font-size:20px; letter-spacing:-.02em; } h2 { margin:0; font-size:15px; }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .logo { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; color:#fff; font-weight:800; background:linear-gradient(135deg,#4f46e5,#06b6d4); }
+  .brand p { margin:0; font-size:13px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--ok-soft); color:var(--ok); font-size:12px; font-weight:700; white-space:nowrap; }
+  .badge::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+
+  .layout { display:grid; grid-template-columns:340px minmax(0,1fr); gap:20px; align-items:start; }
+  aside { position:sticky; top:20px; } main { min-width:0; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; box-shadow:var(--shadow); }
+  .card-head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .card-head .spacer { margin-left:auto; }
+  .step { width:24px; height:24px; border-radius:50%; background:var(--primary-soft); color:var(--primary); font-size:12px; font-weight:800; display:grid; place-items:center; flex:none; }
+
+  label { display:block; font-weight:600; font-size:13px; margin:14px 0 6px; } label:first-of-type { margin-top:0; }
+  input, textarea, button { font:inherit; color:inherit; }
+  input, textarea { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:10px; background:var(--surface); outline:none; transition:border-color .15s, box-shadow .15s; }
+  input:focus, textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+  textarea { min-height:150px; resize:vertical; font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .codes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .codes label { margin:0 0 6px; } .codes input { padding:9px 8px; }
+  .token-wrap { display:flex; gap:8px; } .token-wrap input { flex:1; min-width:0; }
+  .hint { margin:8px 0 0; }
+
+  button { border:1px solid var(--border); background:var(--surface); border-radius:10px; padding:9px 14px; font-weight:600; cursor:pointer; transition:background .15s, transform .15s, box-shadow .15s; }
+  button:hover:not(:disabled) { background:var(--soft); }
+  button.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+  button.primary:hover:not(:disabled) { background:var(--primary-h); transform:translateY(-1px); box-shadow:0 6px 14px #4f46e533; }
+  button.danger { color:var(--bad); } button.danger:hover:not(:disabled) { background:var(--bad-soft); }
+  button.icon { padding:9px 10px; display:inline-flex; } button.icon svg { width:18px; height:18px; }
+  button.mini { padding:4px 9px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.block { width:100%; margin-top:12px; }
+  .actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:14px; }
+  .actions .spacer { margin-left:auto; }
+
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; white-space:nowrap; }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .pill.ok, [data-state=completed] { background:var(--ok-soft); color:var(--ok); }
+  .pill.bad, [data-state=cancelled] { background:var(--bad-soft); color:var(--bad); }
+  [data-state=processing] { background:var(--primary-soft); color:var(--primary); }
+
+  .progress { height:10px; background:var(--soft); border-radius:99px; overflow:hidden; border:1px solid var(--border); }
+  .bar { height:100%; width:0; background:linear-gradient(90deg,#4f46e5,#06b6d4); transition:width .3s; }
+  .now { display:flex; justify-content:space-between; gap:12px; margin:12px 0 16px; flex-wrap:wrap; }
+  .current { font-family:ui-monospace, monospace; word-break:break-all; }
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .stat { background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center; color:var(--muted); font-size:12px; font-weight:600; }
+  .stat b { display:block; font-size:22px; color:var(--text); letter-spacing:-.02em; }
+  .stat.s b { color:var(--ok); } .stat.f b { color:var(--bad); }
+
+  .search { max-width:260px; }
+  .grid { border:1px solid var(--border); border-radius:12px; overflow:auto; max-height:480px; }
+  table { border-collapse:collapse; width:100%; min-width:640px; }
+  th, td { padding:8px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+  tbody tr:last-child td { border-bottom:0; } tbody tr:hover { background:var(--soft); }
+  th { background:var(--soft); position:sticky; top:0; z-index:1; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  td:first-child { width:44px; color:var(--muted); } td:nth-child(3) { width:110px; } td:last-child { width:90px; text-align:right; }
+  .grid td input { border-color:transparent; background:transparent; padding:6px 8px; font-family:ui-monospace, monospace; font-size:13px; }
+  .grid td input:hover { border-color:var(--border); } .grid td input:focus { background:var(--surface); }
+  .response-cell { max-width:340px; word-break:break-word; }
+  details summary { cursor:pointer; color:var(--primary); font-weight:600; }
+  details pre { white-space:pre-wrap; margin:8px 0 0; padding:10px; border-radius:8px; background:var(--soft); font:12px ui-monospace, monospace; color:var(--muted); }
+  .error { color:var(--bad); font-weight:600; margin:10px 0 0; } .error:empty { display:none; }
+  #completion { margin:12px 0 0; font-weight:600; }
+
+  .toast { position:fixed; right:22px; bottom:22px; z-index:10; background:#172033; color:#fff; padding:12px 16px; border-radius:12px; box-shadow:0 10px 30px #17203355; opacity:0; transform:translateY(12px); transition:.2s; pointer-events:none; max-width:340px; }
+  .toast.show { opacity:1; transform:none; } .toast.success { background:#0f9d63; } .toast.error { background:#d92d20; }
+
+  @media (max-width:960px) { .layout { grid-template-columns:1fr; } aside { position:static; } }
+  @media (max-width:600px) { .app { padding:16px 12px 48px; } .stats { grid-template-columns:repeat(2,1fr); } .search { max-width:none; } .topbar { flex-direction:column; align-items:flex-start; } }
+</style>
 </head>
 <body>
-  <header class="hero"><div><h1>Service GUID Processor</h1><p class="muted">Send serviceGUID requests and monitor every result in real time.</p></div><span class="badge">● Local processing</span></header>
-  <section class="card">
-    <form id="start-form">
-      <div class="section-title"><h2>Authentication</h2><span class="status-pill">Token saved locally</span></div>
-      <label for="token">Bearer token</label>
-      <div class="token-row">
-        <div class="token-input-wrap">
-          <input id="token" type="password" required autocomplete="off" placeholder="Saved locally until you update it">
-          <button type="button" id="toggle-token" class="secondary token-visibility" aria-label="Show Bearer token" aria-pressed="false" title="Show Bearer token">
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><div class="logo">G</div><div><h1>Service GUID Processor</h1><p class="muted">Send serviceGUID requests and monitor every result in real time.</p></div></div>
+    <span class="badge" id="mode-badge">Local processing</span>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <form id="start-form" class="card" autocomplete="off">
+        <div class="card-head"><span class="step">1</span><h2>Authentication</h2><span class="pill spacer" id="token-pill">Not saved</span></div>
+        <label for="token">Bearer token</label>
+        <div class="token-wrap">
+          <input id="token" type="password" required placeholder="Paste your token">
+          <button type="button" id="toggle-token" class="icon" aria-label="Show Bearer token" aria-pressed="false" title="Show Bearer token">
             <svg id="show-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             <svg id="hide-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m3 3 18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3 3.8"></path><path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8"></path></svg>
           </button>
         </div>
-        <button type="button" id="save-token" class="secondary">Save Token</button>
-      </div>
-      <div class="id-fields">
-        <div><label for="organization-code">Organization Code</label><input id="organization-code" type="text" value="U002" required></div>
-        <div><label for="group-code">Group Code</label><input id="group-code" type="text" value="D600" required></div>
-        <div><label for="source-code">Source Code</label><input id="source-code" type="text" value="D600" required></div>
-      </div>
-      <div class="options"><div><label for="guid-input">Paste serviceGUID values</label><textarea id="guid-input" placeholder="Paste one serviceGUID per line"></textarea></div></div>
-      <div class="toolbar"><button id="start">Start Processing</button><span id="input-count" class="muted"></span></div>
-    </form>
-    <p id="message" class="error"></p>
-  </section>
-  <section id="progress-card" class="card" hidden>
-    <div class="section-title"><h2 id="processing-title">Processing</h2><span id="live-status" class="status-pill">Ready</span></div><div class="progress"><div id="bar" class="bar"></div></div>
-    <p id="status-message">Starting...</p><p>Currently Processing: <span id="current" class="current">-</span></p>
-    <div class="stats"><div class="stat">Total<b id="total">0</b></div><div class="stat">Completed<b id="completed">0</b></div><div class="stat">Successful<b id="successful">0</b></div><div class="stat">Failed<b id="failed">0</b></div><div class="stat">Remaining<b id="remaining">0</b></div></div>
-  </section>
+        <button type="button" id="save-token" class="block">Save token</button>
+        <p class="muted small hint">Stored in this browser only.</p>
 
-  <section id="results-card" class="card" hidden>
-    <div class="results-tools"><div class="section-title"><h2>Service GUID Results</h2><span class="muted">Live row-by-row updates</span></div><input id="result-search" class="search" placeholder="Search GUID or response"></div><div class="guid-grid"><table><thead><tr><th>#</th><th>serviceGUID</th><th>Status</th><th>Response / Result</th><th></th></tr></thead><tbody id="guid-rows"></tbody></table></div>
-    <div class="toolbar"><button type="button" id="add-guid" class="secondary">+ Add Row</button></div>
-    <button id="cancel" class="danger">Cancel Processing</button><button id="download" hidden>Download Results</button><button id="retry" class="secondary" hidden>Retry Failed IDs</button><p id="completion"></p>
-    <div class="table-wrap"><table><thead><tr><th>#</th><th>serviceGUID</th><th>Status</th><th>HTTP Code</th><th>Response</th></tr></thead><tbody id="results"></tbody></table></div>
-  </section>
-  <div id="toast" class="toast"></div>
-  <script>
-    const $ = id => document.getElementById(id); let jobId = null, socket = null;
-    let toastTimer;
-    function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
-    function showToast(text, type = "success") { const toast = $("toast"); toast.textContent = text; toast.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.className = "toast", 3500); }
-    function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[c])); }
-    function gridValues() { return [...document.querySelectorAll("#guid-rows input")].map(input => input.value.trim()).filter(Boolean); }
-    function updateCount() { const count = new Set(gridValues()).size; $("input-count").textContent = count ? `${count} unique GUIDs detected` : ""; }
-    function renumberGrid() { [...$("guid-rows").children].forEach((row, index) => row.firstElementChild.textContent = index + 1); }
-    function addGuidRow(value = "") {
-      const row = document.createElement("tr"); row.dataset.guid = value;
-      row.innerHTML = `<td></td><td><input type="text" value="${escapeHtml(value)}" placeholder="serviceGUID"></td><td class="guid-status">Pending</td><td class="guid-response response-cell"></td><td><button type="button" class="danger remove-guid">Remove</button></td>`;
-      $("guid-rows").appendChild(row); renumberGrid();
-      row.querySelector("input").oninput = event => { row.dataset.guid = event.target.value.trim(); updateCount(); };
-      row.querySelector(".remove-guid").onclick = () => { if ($("guid-rows").children.length > 1) { row.remove(); renumberGrid(); updateCount(); } };
-    }
-    function renderGrid(values) { $("guid-rows").innerHTML = ""; (values.length ? values : [""]).forEach(addGuidRow); updateCount(); }
-    function render(data) {
-      $("progress-card").hidden = false; $("results-card").hidden = false; ["total","completed","successful","failed","remaining"].forEach(k => $(k).textContent = data[k]);
-      const percent = data.total ? Math.round(data.completed * 100 / data.total) : 0; $("bar").style.width = percent + "%";
-      $("processing-title").textContent = `Processing: ${data.completed} / ${data.total} (${percent}%)`; $("current").textContent = data.current || "-"; $("status-message").textContent = data.status_message; $("live-status").textContent = data.state === "processing" ? "In progress" : data.state === "completed" ? "Complete" : data.state;
-      const resultByGuid = new Map(data.results.map(result => [result.serviceGUID, result]));
-      document.querySelectorAll("#guid-rows tr").forEach(row => { const result = resultByGuid.get(row.dataset.guid); if (!result) return; const status = row.querySelector(".guid-status"); status.textContent = result.Status; status.className = `guid-status ${result.Status === "Success" ? "success" : "failed"}`; const response = result.DisplayResponse || result.Response || ""; row.querySelector(".guid-response").innerHTML = `<details><summary>${escapeHtml(response.slice(0, 100) || "No response")}</summary><pre>${escapeHtml(result.Response || response)}</pre></details>`; });
-      filterRows();
-      const done = data.state === "completed" || data.state === "cancelled"; $("cancel").disabled = done; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0;
-      if (done) { $("completion").textContent = data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`; $("start").disabled = false; showToast($("completion").textContent); }
-    }
-    $("save-token").onclick = () => { const token = $("token").value.trim(); if (!token) return showError("Enter a token before saving it."); localStorage.setItem("service-guid-bearer-token", token); showToast("Token saved for future requests."); };
-    $("token").value = localStorage.getItem("service-guid-bearer-token") || "";
-    $("toggle-token").onclick = () => {
-      const visible = $("token").type === "password";
-      $("token").type = visible ? "text" : "password";
-      $("toggle-token").setAttribute("aria-pressed", String(visible));
-      $("toggle-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Bearer token`);
-      $("toggle-token").title = `${visible ? "Hide" : "Show"} Bearer token`;
-      $("show-token-icon").hidden = visible;
-      $("hide-token-icon").hidden = !visible;
-    };
-    ["organization-code", "group-code", "source-code"].forEach(id => {
-      const input = $(id);
-      input.value = localStorage.getItem(`service-guid-${id}`) || input.value;
-      input.oninput = () => localStorage.setItem(`service-guid-${id}`, input.value);
+        <div class="card-head" style="margin:22px 0 14px"><span class="step">2</span><h2>Request settings</h2></div>
+        <div class="codes">
+          <div><label for="organization-code" title="Organization code">Organization</label><input id="organization-code" type="text" value="U002" required></div>
+          <div><label for="group-code" title="Group code">Group</label><input id="group-code" type="text" value="D600" required></div>
+          <div><label for="source-code" title="Source code">Source</label><input id="source-code" type="text" value="D600" required></div>
+        </div>
+      </form>
+    </aside>
+
+    <main>
+      <section class="card">
+        <div class="card-head"><span class="step">3</span><h2>serviceGUID input</h2><span id="input-count" class="muted small spacer"></span></div>
+        <textarea id="guid-input" placeholder="Paste one serviceGUID per line"></textarea>
+        <div class="actions"><button id="start" type="submit" form="start-form" class="primary">Start processing</button></div>
+        <p id="message" class="error"></p>
+      </section>
+
+      <section id="progress-card" class="card" hidden>
+        <div class="card-head"><h2 id="processing-title">Processing</h2><span id="live-status" class="pill spacer">Ready</span></div>
+        <div class="progress"><div id="bar" class="bar"></div></div>
+        <div class="now"><span id="status-message" class="muted">Starting...</span><span>Now processing: <span id="current" class="current">-</span></span></div>
+        <div class="stats">
+          <div class="stat">Total<b id="total">0</b></div><div class="stat">Completed<b id="completed">0</b></div>
+          <div class="stat s">Successful<b id="successful">0</b></div><div class="stat f">Failed<b id="failed">0</b></div><div class="stat">Remaining<b id="remaining">0</b></div>
+        </div>
+      </section>
+
+      <section id="results-card" class="card">
+        <div class="card-head"><h2>Queue &amp; results</h2><span class="muted small">Live row-by-row updates</span><input id="result-search" class="search spacer" placeholder="Search GUID or response"></div>
+        <div class="grid"><table><thead><tr><th>#</th><th>serviceGUID</th><th>Status</th><th>Response / result</th><th></th></tr></thead><tbody id="guid-rows"></tbody></table></div>
+        <div class="actions">
+          <button type="button" id="add-guid">+ Add row</button>
+          <span class="spacer"></span>
+          <button type="button" id="retry" hidden>Retry failed IDs</button>
+          <button type="button" id="download" class="primary" hidden>Download results</button>
+          <button type="button" id="cancel" class="danger" disabled>Cancel processing</button>
+        </div>
+        <p id="completion"></p>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+  const DEMO_FALLBACK = true; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
+  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer;
+  const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+  function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
+  function showToast(text, type = "success") { const t = $("toast"); t.textContent = text; t.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = "toast", 3500); }
+  function escapeHtml(v) { return String(v).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[c])); }
+  function gridValues() { return [...document.querySelectorAll("#guid-rows input")].map(i => i.value.trim()).filter(Boolean); }
+  function updateCount() { const n = new Set(gridValues()).size; $("input-count").textContent = n ? `${n} unique GUIDs` : ""; }
+  function renumberGrid() { [...$("guid-rows").children].forEach((row, i) => row.firstElementChild.textContent = i + 1); }
+  function updateTokenPill() { const saved = Boolean(store.get("service-guid-bearer-token")); $("token-pill").textContent = saved ? "Saved locally" : "Not saved"; $("token-pill").className = "pill spacer" + (saved ? " ok" : ""); }
+
+  function addGuidRow(value = "") {
+    const row = document.createElement("tr"); row.dataset.guid = value;
+    row.innerHTML = `<td></td><td><input type="text" value="${escapeHtml(value)}" placeholder="serviceGUID"></td><td class="guid-status"><span class="pill">Pending</span></td><td class="guid-response response-cell"></td><td><button type="button" class="danger mini remove-guid">Remove</button></td>`;
+    $("guid-rows").appendChild(row); renumberGrid();
+    row.querySelector("input").oninput = e => { row.dataset.guid = e.target.value.trim(); updateCount(); };
+    row.querySelector(".remove-guid").onclick = () => { if ($("guid-rows").children.length > 1) { row.remove(); renumberGrid(); updateCount(); } };
+  }
+  function renderGrid(values) { $("guid-rows").innerHTML = ""; (values.length ? values : [""]).forEach(addGuidRow); updateCount(); }
+
+  function render(data) {
+    $("progress-card").hidden = false;
+    ["total","completed","successful","failed","remaining"].forEach(k => $(k).textContent = data[k]);
+    const percent = data.total ? Math.round(data.completed * 100 / data.total) : 0; $("bar").style.width = percent + "%";
+    $("processing-title").textContent = `Processing: ${data.completed} / ${data.total} (${percent}%)`;
+    $("current").textContent = data.current || "-"; $("status-message").textContent = data.status_message;
+    $("live-status").textContent = data.state === "processing" ? "In progress" : data.state === "completed" ? "Complete" : data.state;
+    $("live-status").dataset.state = data.state;
+    const byGuid = new Map(data.results.map(r => [r.serviceGUID, r]));
+    document.querySelectorAll("#guid-rows tr").forEach(row => {
+      const r = byGuid.get(row.dataset.guid); if (!r) return;
+      const s = row.querySelector(".guid-status span"); s.textContent = r.Status; s.className = "pill " + (r.Status === "Success" ? "ok" : "bad");
+      const resp = r.DisplayResponse || r.Response || "";
+      row.querySelector(".guid-response").innerHTML = `<details><summary>${escapeHtml(resp.slice(0, 100) || "No response")}</summary><pre>${escapeHtml(r.Response || resp)}</pre></details>`;
     });
-    function resetForNewBatch() { if (socket) socket.close(); jobId = null; $("progress-card").hidden = true; $("results-card").hidden = true; $("start").disabled = false; $("completion").textContent = ""; showError(""); }
-    $("add-guid").onclick = () => { addGuidRow(); updateCount(); };
-    $("guid-input").oninput = () => { resetForNewBatch(); renderGrid($("guid-input").value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)); };
-    renderGrid([]);
-    function filterRows() { const query = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => row.hidden = Boolean(query) && !row.textContent.toLowerCase().includes(query)); }
-    $("result-search").oninput = filterRows;
-    $("start-form").onsubmit = async e => { e.preventDefault(); showError(""); const token = $("token").value.trim(), direct = gridValues().join("\n"); if (!token || !direct.trim()) return showError("Token and an input are required."); localStorage.setItem("service-guid-bearer-token", token); const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct); form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim()); $("start").disabled = true; try { const response = await fetch("/api/jobs", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.detail); connect(data.job_id); } catch (err) { showError(err.message); $("start").disabled = false; } };
-    function connect(id) { jobId = id; socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/jobs/${id}`); socket.onmessage = event => { const data = JSON.parse(event.data); render(data); if (data.state === "completed" || data.state === "cancelled") socket.close(); }; socket.onerror = () => showError("Live progress connection failed. Refresh to reconnect."); }
-    $("cancel").onclick = async () => { if (jobId) await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" }); }; $("download").onclick = () => { location.href = `/api/jobs/${jobId}/download`; };
-    $("retry").onclick = async () => { const response = await fetch(`/api/jobs/${jobId}/retry`, { method: "POST" }); const data = await response.json(); if (!response.ok) return showError(data.detail); $("completion").textContent = ""; $("retry").hidden = true; connect(data.job_id); };
-  </script>
+    filterRows();
+    const done = data.state === "completed" || data.state === "cancelled";
+    $("cancel").disabled = done; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0;
+    if (done) {
+      $("completion").textContent = data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
+      $("start").disabled = false; showToast($("completion").textContent);
+    }
+  }
+
+  $("save-token").onclick = () => { const t = $("token").value.trim(); if (!t) return showError("Enter a token before saving it."); store.set("service-guid-bearer-token", t); updateTokenPill(); showToast("Token saved for future requests."); };
+  $("token").value = store.get("service-guid-bearer-token") || ""; updateTokenPill();
+  $("toggle-token").onclick = () => {
+    const visible = $("token").type === "password"; $("token").type = visible ? "text" : "password";
+    $("toggle-token").setAttribute("aria-pressed", String(visible)); $("toggle-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Bearer token`); $("toggle-token").title = `${visible ? "Hide" : "Show"} Bearer token`;
+    $("show-token-icon").hidden = visible; $("hide-token-icon").hidden = !visible;
+  };
+  ["organization-code", "group-code", "source-code"].forEach(id => { const i = $(id); i.value = store.get(`service-guid-${id}`) || i.value; i.oninput = () => store.set(`service-guid-${id}`, i.value); });
+
+  function resetForNewBatch() { if (socket) socket.close(); if (demo) demo.cancelled = true; jobId = null; demo = null; $("progress-card").hidden = true; $("download").hidden = true; $("retry").hidden = true; $("cancel").disabled = true; $("start").disabled = false; $("completion").textContent = ""; showError(""); }
+  $("add-guid").onclick = () => { addGuidRow(); updateCount(); };
+  $("guid-input").oninput = () => { resetForNewBatch(); renderGrid($("guid-input").value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)); };
+  renderGrid([]);
+  function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(r => r.hidden = Boolean(q) && !r.textContent.toLowerCase().includes(q) && !r.querySelector("input").value.toLowerCase().includes(q)); }
+  $("result-search").oninput = filterRows;
+
+  // Demo simulation (preview only, see DEMO_FALLBACK)
+  function runDemo(guids) {
+    const me = demo = { cancelled: false }, results = [], total = guids.length; let i = 0;
+    const st = { total, completed: 0, successful: 0, failed: 0, remaining: total, current: "", status_message: "Demo mode: simulated responses, no request was sent.", state: "processing", results };
+    $("mode-badge").textContent = "Demo mode";
+    const step = () => {
+      if (me.cancelled) { if (demo === me) { st.state = "cancelled"; st.current = ""; render(st); } return; }
+      if (i >= total) { st.state = "completed"; st.current = ""; st.status_message = "Finished"; render(st); return; }
+      const g = guids[i++]; st.current = g; render(st);
+      setTimeout(() => {
+        if (me.cancelled) return step();
+        const ok = Math.random() > .25; results.push({ serviceGUID: g, Status: ok ? "Success" : "Failed", Response: ok ? '{"status":"OK","message":"Processed"}' : '{"error":"Simulated failure"}' });
+        st.completed++; ok ? st.successful++ : st.failed++; st.remaining--; render(st); step();
+      }, 450);
+    };
+    demo.state = st; step();
+  }
+
+  $("start-form").onsubmit = async e => {
+    e.preventDefault(); showError("");
+    const token = $("token").value.trim(), direct = gridValues().join("\n");
+    if (!token || !direct.trim()) return showError("Token and an input are required.");
+    store.set("service-guid-bearer-token", token); updateTokenPill();
+    const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct);
+    form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim());
+    $("start").disabled = true;
+    try {
+      let response = null; try { response = await fetch("/api/jobs", { method: "POST", body: form }); } catch {}
+      if (DEMO_FALLBACK && (!response || [404, 405].includes(response.status))) { $("cancel").disabled = false; return runDemo([...new Set(gridValues())]); }
+      if (!response) throw new Error("Could not reach the server.");
+      const data = await response.json(); if (!response.ok) throw new Error(data.detail);
+      connect(data.job_id);
+    } catch (err) { showError(err.message); $("start").disabled = false; }
+  };
+  function connect(id) {
+    jobId = id; $("cancel").disabled = false;
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/jobs/${id}`);
+    socket.onmessage = event => { const data = JSON.parse(event.data); render(data); if (data.state === "completed" || data.state === "cancelled") socket.close(); };
+    socket.onerror = () => showError("Live progress connection failed. Refresh to reconnect.");
+  }
+  $("cancel").onclick = async () => { if (demo) { demo.cancelled = true; return; } if (jobId) await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" }); };
+  $("download").onclick = () => {
+    if (demo) {
+      const rows = demo.state.results.map(r => [r.serviceGUID, r.Status, r.Response].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["serviceGUID,Status,Response\n" + rows.join("\n")], { type: "text/csv" })); a.download = "results.csv"; a.click(); return;
+    }
+    location.href = `/api/jobs/${jobId}/download`;
+  };
+  $("retry").onclick = async () => {
+    if (demo) { const failed = demo.state.results.filter(r => r.Status !== "Success").map(r => r.serviceGUID); $("completion").textContent = ""; $("retry").hidden = true; $("download").hidden = true; $("cancel").disabled = false; return runDemo(failed); }
+    const response = await fetch(`/api/jobs/${jobId}/retry`, { method: "POST" }); const data = await response.json();
+    if (!response.ok) return showError(data.detail);
+    $("completion").textContent = ""; $("retry").hidden = true; connect(data.job_id);
+  };
+</script>
 </body>
 </html>
