@@ -78,10 +78,9 @@
   th { background:var(--soft); position:sticky; top:0; z-index:1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); white-space:nowrap; }
   tbody tr:hover { background:var(--soft); } tbody tr:last-child td { border-bottom:0; }
   tr[data-ok="1"] td:first-child { box-shadow:inset 3px 0 var(--ok); } tr[data-ok="0"] td:first-child { box-shadow:inset 3px 0 var(--bad); }
-  th:nth-child(1) { min-width:112px; } th:nth-child(2) { min-width:300px; } th:nth-child(3) { min-width:130px; }
-  th:nth-child(4), th:nth-child(5) { min-width:100px; } th:nth-child(6) { min-width:112px; } th:nth-child(7) { min-width:220px; }
-  th:nth-child(8) { min-width:96px; } th:nth-child(9) { min-width:360px; width:30%; }
-  .grid td input { padding:5px 6px; border:1px solid transparent; border-radius:8px; background:transparent; font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow:ellipsis; min-width:0; }
+  table { table-layout:fixed; } th, td { padding:4px 8px; overflow:hidden; } th { padding:6px 8px; white-space:normal; overflow-wrap:anywhere; }
+  @media (max-width:1000px) { table { min-width:960px; } }
+  .grid td input { padding:3px 6px; border:1px solid transparent; border-radius:8px; background:transparent; font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow:ellipsis; min-width:0; }
   .grid td input[readonly] { cursor:default; box-shadow:none; }
   .grid td input.editable { background:var(--primary-soft); border:1px dashed var(--primary); cursor:text; } .grid td input.editable:focus { background:var(--surface); }
   .grid td input.invalid { background:var(--bad-soft); border:1px solid var(--bad); color:var(--bad); }
@@ -167,6 +166,7 @@
     $("input-count").textContent = n ? `${$("guid-rows").rows.length} rows · ${n} unique GUIDs` : "";
     $("clear-table").hidden = ![...$("guid-rows").querySelectorAll("input")].some(input => input.value.trim());
     $("empty").hidden = !$("clear-table").hidden;
+    fitColumns();
   }
   function updateTokenPill() { const saved = Boolean(store.get("service-guid-bearer-token")); $("token-pill").textContent = saved ? "Saved locally" : "Not saved"; $("token-pill").className = "pill" + (saved ? " ok" : ""); }
   function setTokenExpired(expired) { $("token").classList.toggle("auth-expired", expired); $("token-expired").hidden = !expired; }
@@ -218,6 +218,19 @@
     updateCount();
   }
 
+  const fontOf = el => { const c = getComputedStyle(el); return `${c.fontStyle} ${c.fontWeight} ${c.fontSize} ${c.fontFamily}`; };
+  function fitColumns() {
+    const grid = $("guid-rows").closest(".grid"), ths = grid.querySelectorAll("thead th"), rows = [...$("guid-rows").rows];
+    const ctx = (fitColumns.ctx = fitColumns.ctx || document.createElement("canvas").getContext("2d")); if (!ctx || !rows.length) return;
+    const widths = [...ths].slice(0, 5).map((th, c) => {
+      const sample = rows[0].cells[c].querySelector("input"); ctx.font = fontOf(sample);
+      const cell = Math.ceil(Math.max(...rows.map(r => { const i = r.cells[c].querySelector("input"); return ctx.measureText(i.value || i.placeholder || "").width; }))) + 38;
+      ctx.font = fontOf(th);
+      return Math.max(cell, Math.ceil(ctx.measureText(th.textContent.toUpperCase()).width + th.textContent.length * 0.7) + 22);
+    });
+    const cap = Math.max(grid.clientWidth, innerWidth <= 1000 ? 960 : 0) * 0.62, total = widths.reduce((a, b) => a + b, 0), k = total > cap ? cap / total : 1;
+    widths.forEach((w, c) => ths[c].style.width = Math.floor(w * k) + "px");
+  }
   function clearValidation() { document.querySelectorAll("#guid-rows input.invalid").forEach(i => i.classList.remove("invalid")); $("message").textContent = ""; }
   function lockFirstCell(lock) { const c = document.querySelector("#guid-rows tr:first-child input"); if (c) { c.readOnly = lock; c.classList.toggle("editable", !lock); } }
   const GUID_RE = /^[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}$/i;
@@ -256,11 +269,15 @@
     });
     filterRows();
     const done = data.state === "completed" || data.state === "cancelled";
-    $("cancel").disabled = done; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0 || data.auth_expired;
+    $("cancel").disabled = done || data.sharepoint_status === "saving"; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0 || data.auth_expired;
     $("clear-table").disabled = !done; if (done) lockFirstCell(false);
     if (done) {
-      $("completion").textContent = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
-      $("start").disabled = false; showToast($("completion").textContent, data.auth_expired ? "error" : "success");
+      const completion = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
+      const sharepointSummary = data.sharepoint_status === "saved"
+        ? ` SharePoint: appended ${data.sharepoint_added} record(s), skipped ${data.sharepoint_skipped} duplicate(s).`
+        : data.sharepoint_status === "error" ? ` SharePoint save failed: ${data.sharepoint_error}` : "";
+      $("completion").textContent = completion + sharepointSummary;
+      $("start").disabled = false; showToast($("completion").textContent, data.auth_expired || data.sharepoint_status === "error" ? "error" : "success");
     }
   }
 
@@ -297,7 +314,7 @@
   }
   $("clear-table").onclick = () => clearTable();
   $("guid-rows").addEventListener("paste", pasteIntoGrid);
-  renderGrid();
+  renderGrid(); window.addEventListener("resize", fitColumns);
   function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => { const values = [...row.querySelectorAll("input")].map(input => input.value).join(" "); row.hidden = (Boolean(q) && !(row.textContent + values).toLowerCase().includes(q)) || (Boolean(statusFilter) && row.dataset.ok !== statusFilter); }); }
   $("result-search").oninput = filterRows;
   document.querySelectorAll(".stat[data-filter]").forEach(chip => chip.onclick = () => {
@@ -341,6 +358,11 @@
     }
     store.set("service-guid-bearer-token", token); updateTokenPill();
     const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct);
+    const records = [...$("guid-rows").rows].map(row => Object.fromEntries(INPUT_FIELDS.map(field => [
+      field.toLowerCase(),
+      row.querySelector(`[data-field="${field}"]`).value.trim()
+    ]))).filter(row => row.serviceguid);
+    form.append("records", JSON.stringify(records));
     form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim());
     $("start").disabled = true; $("clear-table").disabled = true; lockFirstCell(true);
     try {

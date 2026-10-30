@@ -12,3 +12,11 @@ services:
         sync: false
       - key: API_PASSWORD
         sync: false
+      - key: MS_TENANT_ID
+        sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: SHAREPOINT_FILE_URL
+        sync: false

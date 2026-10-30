@@ -5,12 +5,13 @@ It supports:
 
 - Bearer token entry per processing session
 - Editable organization, group, and source codes (defaulting to U002, D600, and D600)
-- Eight-column table for Date, serviceguid, document_number, tenant_code, route_code, document_date, failure_reason, and Response
+- Input table for Date, serviceguid, document_number, tenant_code, route_code, document_date, failure_reason, Status, and Response
 - Pasting tab-separated spreadsheet rows from the first Date cell; pasted values are read-only and Date plus serviceguid are required for every row
 - One batch per table: clear the table to paste another batch; clearing cancels active processing and removes the current results
 - Stops and highlights the token when the first GUID returns an upstream failure other than a network error, or when the API explicitly reports an authentication failure
 - Marks the token field with a red Expired indicator when an authentication error is confirmed
 - Live progress, cancellation, retry of failed IDs, and CSV result download
+- Automatic SharePoint workbook append after processing, with case-insensitive serviceGUID duplicate skipping and API responses stored in a Response column
 
 ## Run on localhost (Windows)
 
@@ -85,3 +86,34 @@ service restarts; download results before ending a long session.
 The deployed service uses the bearer token entered in the page. Render
 provides HTTPS automatically, and the app's WebSocket progress connection
 uses that secure connection automatically.
+
+### Configure automatic SharePoint workbook export
+
+The export uses Microsoft Graph app-only authentication and the SharePoint
+file's sharing URL. Register an app in Microsoft Entra ID, add the Microsoft
+Graph **Application** permission `Files.ReadWrite.All`, and have a tenant
+administrator grant consent. This application permission can grant broad
+file access in the tenant, so have an administrator approve it under your
+organization's access policy. Keep the application secret private.
+
+Set these variables in the Render service's environment settings (or in the
+local `.env` file):
+
+- `MS_TENANT_ID`: Entra tenant ID
+- `MS_CLIENT_ID`: app registration's client ID
+- `MS_CLIENT_SECRET`: app registration client secret
+- `SHAREPOINT_FILE_URL`: the sharing URL for `Failed Order Data.xlsx`
+
+Never commit `.env` or put the client secret in frontend code. The workbook
+must have a header row containing `Date`, `serviceguid`, `document_number`,
+`tenant_code`, `route_code`, `document_date`, `failure_reason`, and `Status`.
+If it does not already have `Response`, the exporter adds it as the last
+column. Each completed job appends non-duplicate GUIDs and stores the API
+response; existing GUID rows are left unchanged. If the workbook changes
+concurrently, the exporter rejects that save instead of replacing newer edits.
+The job status reports export errors so failed saves are visible.
+
+The app uses the Microsoft Graph shared-item and file-content APIs:
+[access shared files](https://learn.microsoft.com/graph/api/shares-get?view=graph-rest-1.0),
+[download file content](https://learn.microsoft.com/graph/api/driveitem-get-content?view=graph-rest-1.0),
+and [upload updated file content](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0).
