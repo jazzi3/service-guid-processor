@@ -180,7 +180,7 @@
     const row = document.createElement("tr"), first = $("guid-rows").rows.length === 0;
     row.innerHTML = INPUT_FIELDS.map((field, index) => `<td><input type="text" data-field="${field}" value="${escapeHtml(values[index] || "")}" title="${escapeHtml(values[index] || "")}" aria-label="${field}" ${first && index === 0 ? 'class="editable" placeholder="Click, then paste"' : "readonly"}></td>`).join("") + '<td class="guid-status"></td><td class="guid-response response-cell"></td>';
     $("guid-rows").appendChild(row);
-    if (first) row.querySelector("input").addEventListener("input", e => { e.target.classList.remove("invalid"); e.target.title = e.target.value; updateCount(); });
+    if (first) row.querySelector("input").addEventListener("input", e => { e.target.title = e.target.value; clearValidation(); updateCount(); if (!e.target.value.trim()) clearTable(true); });
   }
   function renderGrid(rows = [[]]) { $("guid-rows").innerHTML = ""; rows.forEach(addGuidRow); updateCount(); }
   function parsePastedRows(text) {
@@ -194,9 +194,9 @@
     const text = event.clipboardData.getData("text/plain");
     const firstCell = input.dataset.field === "Date" && input.closest("tr") === $("guid-rows").rows[0];
     if (!firstCell) { event.preventDefault(); showError("Paste data starting in the first Date cell."); return; }
-    if (tablePasteLocked || [...$("guid-rows").querySelectorAll("input")].some(cell => cell.value.trim())) { event.preventDefault(); showError("Clear the table before pasting new data."); return; }
+    if ([...$("guid-rows").querySelectorAll("input")].some(cell => cell !== input && cell.value.trim())) { event.preventDefault(); showError("Clear the first Date cell before pasting new data."); return; }
     if (!text) return;
-    event.preventDefault();
+    event.preventDefault(); clearValidation();
     if (!text.includes("\t") && !/[\r\n]/.test(text)) { input.value = text; input.title = text; tablePasteLocked = true; updateCount(); return; }
     const pastedRows = parsePastedRows(text);
     const headers = pastedRows[0].map(value => value.trim().toLowerCase());
@@ -218,6 +218,8 @@
     updateCount();
   }
 
+  function clearValidation() { document.querySelectorAll("#guid-rows input.invalid").forEach(i => i.classList.remove("invalid")); $("message").textContent = ""; }
+  function lockFirstCell(lock) { const c = document.querySelector("#guid-rows tr:first-child input"); if (c) { c.readOnly = lock; c.classList.toggle("editable", !lock); } }
   const GUID_RE = /^[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}$/i;
   function validDate(v) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
@@ -255,7 +257,7 @@
     filterRows();
     const done = data.state === "completed" || data.state === "cancelled";
     $("cancel").disabled = done; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0 || data.auth_expired;
-    $("clear-table").disabled = !done;
+    $("clear-table").disabled = !done; if (done) lockFirstCell(false);
     if (done) {
       $("completion").textContent = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
       $("start").disabled = false; showToast($("completion").textContent, data.auth_expired ? "error" : "success");
@@ -276,10 +278,10 @@
     document.querySelectorAll("#guid-rows tr").forEach(row => { row.dataset.response = ""; row.dataset.status = ""; delete row.dataset.ok; row.querySelector(".guid-status").replaceChildren(); row.querySelector(".guid-response").replaceChildren(); });
     showError("");
   }
-  $("clear-table").onclick = async () => {
+  async function clearTable(fromCell = false) {
     $("clear-table").disabled = true;
     try {
-      if (jobId) {
+      if (jobId && !$("cancel").disabled) {
         const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "The active job could not be cancelled.");
@@ -288,10 +290,12 @@
       ["total", "completed", "successful", "failed", "remaining"].forEach(id => $(id).textContent = "0");
       $("processing-title").textContent = "Processing"; $("live-status").textContent = "Ready"; delete $("live-status").dataset.state;
       $("status-message").textContent = "Starting..."; $("current").textContent = "-";
-      filterRows(); setTokenExpired(false); showToast("Table and processing results cleared.");
+      filterRows(); setTokenExpired(false); clearValidation();
+      if (fromCell) document.querySelector("#guid-rows input").focus(); else showToast("Table and processing results cleared.");
     } catch (error) { showError(`Unable to clear the table: ${error.message}`); }
     finally { $("clear-table").disabled = false; }
-  };
+  }
+  $("clear-table").onclick = () => clearTable();
   $("guid-rows").addEventListener("paste", pasteIntoGrid);
   renderGrid();
   function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => { const values = [...row.querySelectorAll("input")].map(input => input.value).join(" "); row.hidden = (Boolean(q) && !(row.textContent + values).toLowerCase().includes(q)) || (Boolean(statusFilter) && row.dataset.ok !== statusFilter); }); }
@@ -338,14 +342,14 @@
     store.set("service-guid-bearer-token", token); updateTokenPill();
     const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct);
     form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim());
-    $("start").disabled = true; $("clear-table").disabled = true;
+    $("start").disabled = true; $("clear-table").disabled = true; lockFirstCell(true);
     try {
       let response = null; try { response = await fetch("/api/jobs", { method: "POST", body: form }); } catch {}
       if (DEMO_FALLBACK && (!response || [404, 405].includes(response.status))) { $("cancel").disabled = false; return runDemo([...new Set(gridValues())]); }
       if (!response) throw new Error("Could not reach the server.");
       const data = await response.json(); if (!response.ok) throw new Error(data.detail);
       connect(data.job_id);
-    } catch (err) { showError(err.message); $("start").disabled = false; $("clear-table").disabled = false; }
+    } catch (err) { showError(err.message); $("start").disabled = false; $("clear-table").disabled = false; lockFirstCell(false); }
   };
   function connect(id) {
     jobId = id; $("cancel").disabled = false;
