@@ -6,179 +6,156 @@
 <title>Service GUID Processor</title>
 <style>
   :root {
-    --bg:#f4f6fb; --surface:#fff; --soft:#f8fafc; --border:#e3e8f0; --text:#111827; --muted:#667085;
-    --primary:#4f46e5; --primary-h:#4338ca; --primary-soft:#eef0ff; --ok:#0f9d63; --ok-soft:#e1f7ec;
-    --bad:#d92d20; --bad-soft:#fdeceb; --shadow:0 1px 2px #10182808, 0 8px 24px #1018280a;
+    --bg:#eef1f7; --surface:#fff; --soft:#f5f7fb; --line:#e6eaf2; --text:#0f172a; --muted:#64748b;
+    --primary:#4361ee; --primary-h:#3651d4; --primary-soft:#e9edff; --ok:#0f9d63; --ok-soft:#e0f6ec; --bad:#dc2626; --bad-soft:#fdeaea;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: light;
   }
   @media (prefers-color-scheme: dark) { :root {
-    --bg:#0e1320; --surface:#161d2e; --soft:#1b2438; --border:#27324a; --text:#e8ecf5; --muted:#93a0b8;
-    --primary:#818cf8; --primary-h:#6f7af0; --primary-soft:#23285a; --ok:#34d399; --ok-soft:#10382c;
-    --bad:#f87171; --bad-soft:#40201f; --shadow:none; color-scheme: dark; } }
+    --bg:#090d1a; --surface:#121a2e; --soft:#18223a; --line:#25304b; --text:#e8ecf6; --muted:#93a0bd;
+    --primary:#7b93ff; --primary-h:#677fee; --primary-soft:#222c58; --ok:#34d399; --ok-soft:#10382c; --bad:#f87171; --bad-soft:#401f1f; color-scheme: dark; } }
   * { box-sizing:border-box; } [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; }
-  .app { max-width:1680px; margin:0 auto; padding:24px 20px 64px; }
-  h1 { margin:0; font-size:20px; letter-spacing:-.02em; } h2 { margin:0; font-size:15px; }
-  .muted { color:var(--muted); } .small { font-size:12px; }
+  .wrap { padding:0 28px; } .muted { color:var(--muted); } .small { font-size:12px; }
+  h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:-.02em; } h2 { margin:0; font-size:17px; font-weight:700; letter-spacing:-.01em; }
 
-  .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }
-  .brand { display:flex; align-items:center; gap:12px; }
-  .logo { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; color:#fff; font-weight:800; background:linear-gradient(135deg,#4f46e5,#06b6d4); }
-  .brand p { margin:0; font-size:13px; }
-  .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--ok-soft); color:var(--ok); font-size:12px; font-weight:700; white-space:nowrap; }
+  .hero { color:#fff; padding-top:18px; background:radial-gradient(70% 140% at 85% -30%, #4361ee66, transparent 60%), linear-gradient(180deg,#0b1020,#111a36); }
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+  .brand { display:flex; align-items:center; gap:12px; } .brand p { margin:0; font-size:12px; color:#9fb0d6; }
+  .logo { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; color:#fff; font-weight:800; background:linear-gradient(135deg,#4361ee,#22d3ee); box-shadow:0 6px 18px #4361ee66; }
+  .badge { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px; background:#34d39922; color:#6ee7b7; font-size:12px; font-weight:700; white-space:nowrap; }
   .badge::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  #start-form { display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px 28px; padding:22px 0 68px; }
+  .g-auth { flex:1 1 440px; min-width:0; } .codes { display:grid; grid-template-columns:repeat(3,112px); gap:10px; }
+  label { display:block; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#9fb0d6; margin:0 0 6px; }
+  .token-wrap { display:flex; gap:8px; align-items:center; } .token-wrap input { flex:1; min-width:0; }
+  .hero input { background:#ffffff14; border-color:#ffffff26; color:#fff; } .hero input::placeholder { color:#8190b4; }
+  .hero input:focus { border-color:#8da2ff; box-shadow:0 0 0 3px #4361ee55; } .hero .codes input[readonly] { color:#c7d2f0; background:#ffffff0a; }
+  #token.auth-expired { color:#ffb4ab; border-color:var(--bad); background:#dc262633; }
+  .token-expired { color:#ff9d94; font-weight:700; margin-left:6px; text-transform:none; letter-spacing:0; }
 
-  .layout { display:block; }
-  aside { position:static; } main { min-width:0; }
-  #start-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:center; padding:12px 16px; margin-bottom:12px; }
-  .settings-group { min-width:0; }
-  .settings-group .card-head { margin:0 0 8px !important; }
-  .settings-group label { margin:0 0 4px; }
-  .settings-group button.block { width:auto; margin:0; white-space:nowrap; }
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; box-shadow:var(--shadow); }
-  .card-head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
-  .card-head .spacer { margin-left:auto; }
-  .input-head { display:grid; grid-template-columns:1fr auto 1fr; }
-  .input-head .input-head-side { display:flex; align-items:center; gap:10px; }
-  .input-title { display:flex; align-items:center; gap:10px; }
-  .step { width:24px; height:24px; border-radius:50%; background:var(--primary-soft); color:var(--primary); font-size:12px; font-weight:800; display:grid; place-items:center; flex:none; }
+  input { width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:inherit; font:inherit; outline:none; transition:border-color .15s, box-shadow .15s; }
+  input:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+  button { font:inherit; color:inherit; border:1px solid var(--line); background:var(--surface); border-radius:11px; padding:8px 14px; font-weight:600; cursor:pointer; white-space:nowrap; transition:background .15s, transform .15s, box-shadow .15s, color .15s; }
+  button:hover:not(:disabled) { background:var(--soft); } button:disabled { opacity:.4; cursor:not-allowed; }
+  button:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+  .hero button { background:#ffffff14; border-color:#ffffff26; color:#fff; } .hero button:hover:not(:disabled) { background:#ffffff26; }
+  button.icon { width:38px; height:38px; padding:0; display:inline-grid; place-items:center; border-radius:12px; } button.icon svg { width:18px; height:18px; }
+  .panel button.icon { background:var(--soft); border-color:transparent; } .panel button.icon:hover:not(:disabled) { background:var(--primary-soft); color:var(--primary); }
+  .panel button.danger { color:var(--bad); } .panel button.danger:hover:not(:disabled) { background:var(--bad-soft); color:var(--bad); }
+  .panel button.primary { background:linear-gradient(135deg,var(--primary),#6d83ff); color:#fff; }
+  .panel button.primary:hover:not(:disabled) { background:linear-gradient(135deg,var(--primary-h),var(--primary)); color:#fff; transform:translateY(-1px); box-shadow:0 8px 18px #4361ee44; }
 
-  label { display:block; font-weight:600; font-size:13px; margin:14px 0 6px; } label:first-of-type { margin-top:0; }
-  input, textarea, button { font:inherit; color:inherit; }
-  input, textarea { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:10px; background:var(--surface); outline:none; transition:border-color .15s, box-shadow .15s; }
-  input:focus, textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
-  textarea { min-height:150px; resize:vertical; font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .codes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-  .codes label { margin:0 0 4px; } .codes input { padding:7px 8px; }
-  .token-wrap { display:flex; gap:8px; } .token-wrap input { flex:1; min-width:0; }
-  #token.auth-expired { color:var(--bad); border-color:var(--bad); background:var(--bad-soft); }
-  .token-expired { color:var(--bad); font-weight:700; margin-left:6px; }
+  .panel { position:relative; margin:-48px 0 28px; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:18px; box-shadow:0 16px 48px #0b102026; }
+  .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px; }
+  .toolbar .left { display:flex; align-items:baseline; gap:10px; margin-right:auto; }
+  .search { width:260px; padding-left:36px; border-color:transparent; background:var(--soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 11px center/16px no-repeat; }
+  .tools { display:flex; align-items:center; gap:6px; } .tools .sep { width:1px; height:22px; background:var(--line); margin:0 4px; }
+  [data-tip] { position:relative; }
+  .tools [data-tip]:hover::after { content:attr(data-tip); position:absolute; top:calc(100% + 6px); right:0; background:#172033; color:#fff; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; z-index:20; pointer-events:none; }
+  .error { margin:0 0 12px; padding:10px 14px; border-radius:12px; background:var(--bad-soft); color:var(--bad); font-weight:600; white-space:pre-line; } .error:empty { display:none; }
+  #completion { margin:0 0 12px; padding:10px 14px; border-radius:12px; background:var(--soft); font-weight:600; } #completion:empty { display:none; }
 
-  button { border:1px solid var(--border); background:var(--surface); border-radius:10px; padding:9px 14px; font-weight:600; cursor:pointer; transition:background .15s, transform .15s, box-shadow .15s; }
-  button:hover:not(:disabled) { background:var(--soft); }
-  button.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
-  button.primary:hover:not(:disabled) { background:var(--primary-h); transform:translateY(-1px); box-shadow:0 6px 14px #4f46e533; }
-  button.danger { color:var(--bad); } button.danger:hover:not(:disabled) { background:var(--bad-soft); }
-  button.icon { padding:9px 10px; display:inline-flex; } button.icon svg { width:18px; height:18px; }
-  button.mini { padding:4px 9px; font-size:12px; }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button.block { width:100%; margin-top:12px; }
-  .actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:14px; }
-  .actions .spacer { margin-left:auto; }
-
-  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; white-space:nowrap; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; white-space:nowrap; }
+  .hero .pill { background:#ffffff14; color:#c7d2f0; } .hero .pill.ok { background:#34d39922; color:#6ee7b7; }
   .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
-  .pill.ok, [data-state=completed] { background:var(--ok-soft); color:var(--ok); }
-  .pill.bad, [data-state=cancelled] { background:var(--bad-soft); color:var(--bad); }
+  .pill.ok, [data-state=completed] { background:var(--ok-soft); color:var(--ok); } .pill.bad, [data-state=cancelled] { background:var(--bad-soft); color:var(--bad); }
   [data-state=processing] { background:var(--primary-soft); color:var(--primary); }
 
-  .progress { height:10px; background:var(--soft); border-radius:99px; overflow:hidden; border:1px solid var(--border); }
-  .bar { height:100%; width:0; background:linear-gradient(90deg,#4f46e5,#06b6d4); transition:width .3s; }
-  .now { display:flex; justify-content:space-between; gap:12px; margin:12px 0 16px; flex-wrap:wrap; }
-  .current { font-family:ui-monospace, monospace; word-break:break-all; }
-  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
-  .stat { background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center; color:var(--muted); font-size:12px; font-weight:600; }
-  .stat b { display:block; font-size:22px; color:var(--text); letter-spacing:-.02em; }
-  .stat.s b { color:var(--ok); } .stat.f b { color:var(--bad); }
+  #progress-card { background:var(--soft); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:12px; }
+  .p-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; } .p-head h2 { font-size:15px; }
+  .stats { display:flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
+  .stat { display:inline-flex; align-items:center; padding:3px 11px; border-radius:999px; background:var(--surface); border:1px solid var(--line); font-size:12px; font-weight:600; color:var(--muted); }
+  .stat::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); margin-right:7px; } .stat.s::before { background:var(--ok); } .stat.f::before { background:var(--bad); }
+  .stat b { margin-left:6px; font-size:14px; color:var(--text); } .stat.s b { color:var(--ok); } .stat.f b { color:var(--bad); }
+  .stat[data-filter] { cursor:pointer; user-select:none; } .stat.active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
+  .progress { height:10px; background:var(--surface); border-radius:99px; overflow:hidden; border:1px solid var(--line); }
+  .bar { height:100%; width:0; background:linear-gradient(90deg,#4361ee,#22d3ee); border-radius:99px; transition:width .3s; }
+  .now { display:flex; justify-content:space-between; gap:12px; margin-top:8px; flex-wrap:wrap; font-size:12px; } .current { font-family:ui-monospace, monospace; word-break:break-all; }
 
-  .search { max-width:260px; }
-  .grid { border:1px solid var(--border); border-radius:12px; overflow:auto; max-height:480px; }
-  table { border-collapse:collapse; width:100%; min-width:640px; }
-  .grid table { min-width:100%; table-layout:fixed; }
-  th, td { padding:8px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
-  tbody tr:last-child td { border-bottom:0; } tbody tr:hover { background:var(--soft); }
-  th { background:var(--soft); position:sticky; top:0; z-index:1; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-  .grid th:nth-child(1) { width:8%; } .grid th:nth-child(2) { width:14%; }
-  .grid th:nth-child(3) { width:12%; } .grid th:nth-child(4), .grid th:nth-child(5) { width:10%; }
-  .grid th:nth-child(6) { width:13%; } .grid th:nth-child(7) { width:17%; } .grid th:nth-child(8) { width:16%; }
-  .grid td input { min-width:0; width:100%; border-color:transparent; background:transparent; padding:6px 5px; font-family:ui-monospace, monospace; font-size:13px; }
-  .grid td input[readonly] { cursor:default; }
-  .response-cell { min-width:0; word-break:break-word; }
-  .response-cell .pill { margin-bottom:6px; }
-  details summary { cursor:pointer; color:var(--primary); font-weight:600; }
-  details pre { white-space:pre-wrap; margin:8px 0 0; padding:10px; border-radius:8px; background:var(--soft); font:12px ui-monospace, monospace; color:var(--muted); }
-  .error { color:var(--bad); font-weight:600; margin:10px 0 0; } .error:empty { display:none; }
-  #completion { margin:12px 0 0; font-weight:600; }
+  .grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 340px); min-height:280px; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { padding:8px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; font-size:13px; }
+  th { background:var(--soft); position:sticky; top:0; z-index:1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); white-space:nowrap; }
+  tbody tr:hover { background:var(--soft); } tbody tr:last-child td { border-bottom:0; }
+  tr[data-ok="1"] td:first-child { box-shadow:inset 3px 0 var(--ok); } tr[data-ok="0"] td:first-child { box-shadow:inset 3px 0 var(--bad); }
+  th:nth-child(1) { min-width:112px; } th:nth-child(2) { min-width:300px; } th:nth-child(3) { min-width:130px; }
+  th:nth-child(4), th:nth-child(5) { min-width:100px; } th:nth-child(6) { min-width:112px; } th:nth-child(7) { min-width:220px; }
+  th:nth-child(8) { min-width:96px; } th:nth-child(9) { min-width:360px; width:30%; }
+  .grid td input { padding:5px 6px; border:1px solid transparent; border-radius:8px; background:transparent; font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow:ellipsis; min-width:0; }
+  .grid td input[readonly] { cursor:default; box-shadow:none; }
+  .grid td input.editable { background:var(--primary-soft); border:1px dashed var(--primary); cursor:text; } .grid td input.editable:focus { background:var(--surface); }
+  .grid td input.invalid { background:var(--bad-soft); border:1px solid var(--bad); color:var(--bad); }
+  .response-cell { word-break:break-word; } details summary { cursor:pointer; color:var(--primary); font-weight:600; }
+  details pre { white-space:pre-wrap; margin:6px 0 0; padding:8px; border-radius:8px; background:var(--soft); font:12px ui-monospace, monospace; color:var(--muted); max-height:240px; overflow:auto; }
+  .empty { padding:56px 16px; text-align:center; color:var(--muted); font-size:13px; } .empty b { display:block; color:var(--text); font-size:15px; margin-bottom:4px; }
 
   .toast { position:fixed; right:22px; bottom:22px; z-index:10; background:#172033; color:#fff; padding:12px 16px; border-radius:12px; box-shadow:0 10px 30px #17203355; opacity:0; transform:translateY(12px); transition:.2s; pointer-events:none; max-width:340px; }
   .toast.show { opacity:1; transform:none; } .toast.success { background:#0f9d63; } .toast.error { background:#d92d20; }
-
-  @media (max-width:960px) { #start-form { grid-template-columns:1fr; gap:18px; } }
-  @media (max-width:900px) { .grid table { min-width:1000px; } }
-  @media (max-width:600px) { .app { padding:16px 12px 48px; } .stats { grid-template-columns:repeat(2,1fr); } .search { max-width:none; } .topbar { flex-direction:column; align-items:flex-start; } }
+  @media (max-width:700px) { .wrap { padding:0 12px; } .topbar { flex-direction:column; align-items:flex-start; } .search { width:100%; } .stats { margin-left:0; } .codes { grid-template-columns:repeat(3,1fr); width:100%; } }
 </style>
 </head>
 <body>
-<div class="app">
+<div class="hero"><div class="wrap">
   <header class="topbar">
     <div class="brand"><div class="logo">G</div><div><h1>Service GUID Processor</h1><p class="muted">Send serviceGUID requests and monitor every result in real time.</p></div></div>
     <span class="badge" id="mode-badge">Local processing</span>
   </header>
 
-  <div class="layout">
-    <aside>
-      <form id="start-form" class="card" autocomplete="off">
-        <div class="settings-group">
-          <div class="card-head"><span class="step">1</span><h2>Authentication</h2><span class="pill spacer" id="token-pill">Not saved</span></div>
-          <label for="token">Bearer token</label>
-          <div class="token-wrap">
-            <input id="token" type="password" required placeholder="Paste your token">
-            <button type="button" id="toggle-token" class="icon" aria-label="Show Bearer token" aria-pressed="false" title="Show Bearer token">
-              <svg id="show-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              <svg id="hide-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m3 3 18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3 3.8"></path><path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8"></path></svg>
-            </button>
-            <button type="button" id="save-token" class="block">Save token</button>
-          </div>
-        </div>
+  <form id="start-form" autocomplete="off">
+    <div class="g-auth">
+      <label for="token">Bearer token</label>
+      <div class="token-wrap">
+        <input id="token" type="password" required placeholder="Paste your token">
+        <button type="button" id="toggle-token" class="icon" aria-label="Show Bearer token" aria-pressed="false" title="Show Bearer token">
+          <svg id="show-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <svg id="hide-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m3 3 18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3 3.8"></path><path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8"></path></svg>
+        </button>
+        <button type="button" id="save-token">Save token</button>
+        <span class="pill" id="token-pill">Not saved</span>
+      </div>
+    </div>
+    <div class="codes">
+      <div><label for="organization-code" title="Organization code">Organization</label><input id="organization-code" type="text" value="U002" readonly required></div>
+      <div><label for="group-code" title="Group code">Group</label><input id="group-code" type="text" value="D600" readonly required></div>
+      <div><label for="source-code" title="Source code">Source</label><input id="source-code" type="text" value="D600" readonly required></div>
+    </div>
+  </form>
+  </div></div>
+  <div class="wrap">
+  <section class="panel">
+    <div class="toolbar">
+      <div class="left"><h2>Input data</h2><span id="input-count" class="muted small"></span></div>
+      <input id="result-search" class="search" placeholder="Search any column or response">
+      <div class="tools">
+        <button id="start" type="submit" form="start-form" class="icon primary" data-tip="Start processing" aria-label="Start processing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"></polygon></svg></button>
+        <button type="button" id="cancel" class="icon danger" disabled data-tip="Cancel processing" aria-label="Cancel processing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg></button>
+        <span class="sep"></span>
+        <button type="button" id="retry" class="icon" hidden data-tip="Retry failed IDs" aria-label="Retry failed IDs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg></button>
+        <button type="button" id="download" class="icon" hidden data-tip="Download results" aria-label="Download results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg></button>
+        <button type="button" id="clear-table" class="icon danger" hidden data-tip="Clear table" aria-label="Clear table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button>
+      </div>
+    </div>
+    <p id="message" class="error"></p><p id="completion"></p>
 
-        <div class="settings-group">
-          <div class="card-head"><span class="step">2</span><h2>Request settings</h2></div>
-          <div class="codes">
-            <div><label for="organization-code" title="Organization code">Organization</label><input id="organization-code" type="text" value="U002" readonly required></div>
-            <div><label for="group-code" title="Group code">Group</label><input id="group-code" type="text" value="D600" readonly required></div>
-            <div><label for="source-code" title="Source code">Source</label><input id="source-code" type="text" value="D600" readonly required></div>
-          </div>
-        </div>
-      </form>
-    </aside>
-
-    <main>
-      <section class="card">
-        <div class="card-head input-head"><div class="input-head-side"><button type="button" id="clear-table" class="danger mini" hidden>Clear Table</button><span id="input-count" class="muted small"></span></div><div class="input-title"><span class="step">3</span><h2>Input data</h2></div><span></span></div>
-        <p class="muted small">Paste spreadsheet rows starting in the first Date cell. Table values cannot be edited after pasting. Date and serviceguid are required for every row.</p>
-        <div class="grid"><table><thead><tr><th>Date</th><th>serviceguid</th><th>document_number</th><th>tenant_code</th><th>route_code</th><th>document_date</th><th>failure_reason</th><th>Response</th></tr></thead><tbody id="guid-rows"></tbody></table></div>
-        <div class="actions"><button id="start" type="submit" form="start-form" class="primary">Start processing</button></div>
-        <p id="message" class="error"></p>
-      </section>
-
-      <section id="progress-card" class="card" hidden>
-        <div class="card-head"><h2 id="processing-title">Processing</h2><span id="live-status" class="pill spacer">Ready</span></div>
-        <div class="progress"><div id="bar" class="bar"></div></div>
-        <div class="now"><span id="status-message" class="muted">Starting...</span><span>Now processing: <span id="current" class="current">-</span></span></div>
+    <div id="progress-card" hidden>
+      <div class="p-head"><h2 id="processing-title">Processing</h2><span id="live-status" class="pill">Ready</span>
         <div class="stats">
-          <div class="stat">Total<b id="total">0</b></div><div class="stat">Completed<b id="completed">0</b></div>
-          <div class="stat s">Successful<b id="successful">0</b></div><div class="stat f">Failed<b id="failed">0</b></div><div class="stat">Remaining<b id="remaining">0</b></div>
+          <span class="stat" data-filter="all" title="Show all rows">Total<b id="total">0</b></span><span class="stat">Completed<b id="completed">0</b></span>
+          <span class="stat s" data-filter="1" title="Show successful rows only">Successful<b id="successful">0</b></span><span class="stat f" data-filter="0" title="Show failed rows only">Failed<b id="failed">0</b></span><span class="stat">Remaining<b id="remaining">0</b></span>
         </div>
-      </section>
+      </div>
+      <div class="progress"><div id="bar" class="bar"></div></div>
+      <div class="now"><span id="status-message" class="muted">Starting...</span><span>Now processing: <span id="current" class="current">-</span></span></div>
+    </div>
 
-      <section id="results-card" class="card">
-        <div class="card-head"><h2>Queue &amp; results</h2><span class="muted small">Live row-by-row updates</span><input id="result-search" class="search spacer" placeholder="Search GUID or response"></div>
-        <div class="actions">
-          <span class="spacer"></span>
-          <button type="button" id="retry" hidden>Retry failed IDs</button>
-          <button type="button" id="download" class="primary" hidden>Download results</button>
-          <button type="button" id="cancel" class="danger" disabled>Cancel processing</button>
-        </div>
-        <p id="completion"></p>
-      </section>
-    </main>
-  </div>
+    <div class="grid"><table><thead><tr><th>Date</th><th>serviceguid</th><th>document_number</th><th>tenant_code</th><th>route_code</th><th>document_date</th><th>failure_reason</th><th>Status</th><th>Response</th></tr></thead><tbody id="guid-rows"></tbody></table><div id="empty" class="empty"><b>No data yet</b>Paste your rows into the first Date cell.</div></div>
+  </section>
 </div>
 <div id="toast" class="toast"></div>
 
 <script>
   const DEMO_FALLBACK = true; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
-  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, tablePasteLocked = false;
+  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, tablePasteLocked = false, statusFilter = "";
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
   function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
@@ -187,27 +164,23 @@
   function gridValues() { return [...document.querySelectorAll('#guid-rows input[data-field="serviceguid"]')].map(i => i.value.trim()).filter(Boolean); }
   function updateCount() {
     const n = new Set(gridValues()).size;
-    $("input-count").textContent = n ? `${n} unique GUIDs` : "";
+    $("input-count").textContent = n ? `${$("guid-rows").rows.length} rows · ${n} unique GUIDs` : "";
     $("clear-table").hidden = ![...$("guid-rows").querySelectorAll("input")].some(input => input.value.trim());
+    $("empty").hidden = !$("clear-table").hidden;
   }
-  function updateTokenPill() { const saved = Boolean(store.get("service-guid-bearer-token")); $("token-pill").textContent = saved ? "Saved locally" : "Not saved"; $("token-pill").className = "pill spacer" + (saved ? " ok" : ""); }
-  function setTokenExpired(expired) {
-    $("token").classList.toggle("auth-expired", expired);
-    $("token-expired").hidden = !expired;
-  }
+  function updateTokenPill() { const saved = Boolean(store.get("service-guid-bearer-token")); $("token-pill").textContent = saved ? "Saved locally" : "Not saved"; $("token-pill").className = "pill" + (saved ? " ok" : ""); }
+  function setTokenExpired(expired) { $("token").classList.toggle("auth-expired", expired); $("token-expired").hidden = !expired; }
   const expiredLabel = document.createElement("span");
-  expiredLabel.id = "token-expired";
-  expiredLabel.className = "token-expired";
-  expiredLabel.textContent = "Expired";
-  expiredLabel.hidden = true;
+  expiredLabel.id = "token-expired"; expiredLabel.className = "token-expired"; expiredLabel.textContent = "Expired"; expiredLabel.hidden = true;
   document.querySelector('label[for="token"]').append(" ", expiredLabel);
 
   const TABLE_FIELDS = ["Date", "serviceguid", "document_number", "tenant_code", "route_code", "document_date", "failure_reason", "Response"];
   const INPUT_FIELDS = TABLE_FIELDS.slice(0, -1);
   function addGuidRow(values = []) {
-    const row = document.createElement("tr");
-    row.innerHTML = INPUT_FIELDS.map((field, index) => `<td><input type="text" data-field="${field}" value="${escapeHtml(values[index] || "")}" aria-label="${field}" readonly></td>`).join("") + '<td class="guid-response response-cell"></td>';
+    const row = document.createElement("tr"), first = $("guid-rows").rows.length === 0;
+    row.innerHTML = INPUT_FIELDS.map((field, index) => `<td><input type="text" data-field="${field}" value="${escapeHtml(values[index] || "")}" title="${escapeHtml(values[index] || "")}" aria-label="${field}" ${first && index === 0 ? 'class="editable" placeholder="Click, then paste"' : "readonly"}></td>`).join("") + '<td class="guid-status"></td><td class="guid-response response-cell"></td>';
     $("guid-rows").appendChild(row);
+    if (first) row.querySelector("input").addEventListener("input", e => { e.target.classList.remove("invalid"); e.target.title = e.target.value; updateCount(); });
   }
   function renderGrid(rows = [[]]) { $("guid-rows").innerHTML = ""; rows.forEach(addGuidRow); updateCount(); }
   function parsePastedRows(text) {
@@ -220,24 +193,11 @@
     if (!input) return;
     const text = event.clipboardData.getData("text/plain");
     const firstCell = input.dataset.field === "Date" && input.closest("tr") === $("guid-rows").rows[0];
-    if (!firstCell) {
-      event.preventDefault();
-      showError("Paste data starting in the first Date cell.");
-      return;
-    }
-    if (tablePasteLocked || [...$("guid-rows").querySelectorAll("input")].some(cell => cell.value.trim())) {
-      event.preventDefault();
-      showError("Clear the table before pasting new data.");
-      return;
-    }
+    if (!firstCell) { event.preventDefault(); showError("Paste data starting in the first Date cell."); return; }
+    if (tablePasteLocked || [...$("guid-rows").querySelectorAll("input")].some(cell => cell.value.trim())) { event.preventDefault(); showError("Clear the table before pasting new data."); return; }
     if (!text) return;
     event.preventDefault();
-    if (!text.includes("\t") && !/[\r\n]/.test(text)) {
-      input.value = text;
-      tablePasteLocked = true;
-      updateCount();
-      return;
-    }
+    if (!text.includes("\t") && !/[\r\n]/.test(text)) { input.value = text; input.title = text; tablePasteLocked = true; updateCount(); return; }
     const pastedRows = parsePastedRows(text);
     const headers = pastedRows[0].map(value => value.trim().toLowerCase());
     const expectedHeaders = TABLE_FIELDS.map(value => value.toLowerCase());
@@ -250,7 +210,7 @@
         const field = TABLE_FIELDS[columnOffset];
         if (!field || field === "Response") return;
         const cell = $("guid-rows").rows[rowIndex].querySelector(`[data-field="${field}"]`);
-        cell.value = value;
+        cell.value = value; cell.title = value;
         if (cell.dataset.field === "serviceguid") $("guid-rows").rows[rowIndex].dataset.guid = value.trim();
       });
     });
@@ -258,6 +218,23 @@
     updateCount();
   }
 
+  const GUID_RE = /^[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}$/i;
+  function validDate(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const [y, m, d] = v.split("-").map(Number), dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  }
+  function validateRows() {
+    const errors = [];
+    document.querySelectorAll("#guid-rows input.invalid").forEach(i => i.classList.remove("invalid"));
+    [...$("guid-rows").rows].forEach((row, n) => {
+      if (![...row.querySelectorAll("input")].some(i => i.value.trim())) return;
+      const d = row.querySelector('[data-field="Date"]'), g = row.querySelector('[data-field="serviceguid"]');
+      if (!validDate(d.value.trim())) { d.classList.add("invalid"); errors.push(`Row ${n + 1}: Date "${d.value.trim()}" must be YYYY-MM-DD, e.g. 2026-10-31`); }
+      if (!GUID_RE.test(g.value.trim())) { g.classList.add("invalid"); errors.push(`Row ${n + 1}: serviceguid "${g.value.trim()}" must be like B11E6ABC-A795-88A2-727B-AB2C1AA3B281`); }
+    });
+    return errors;
+  }
   function render(data) {
     setTokenExpired(data.auth_expired === true);
     $("progress-card").hidden = false;
@@ -270,9 +247,10 @@
     const byGuid = new Map(data.results.map(r => [r.serviceGUID, r]));
     document.querySelectorAll("#guid-rows tr").forEach(row => {
       const r = byGuid.get(row.querySelector('[data-field="serviceguid"]').value.trim()); if (!r) return;
-      const resp = r.DisplayResponse || r.Response || "";
-      row.dataset.response = r.Response || resp;
-      row.querySelector(".guid-response").innerHTML = `<span class="pill ${r.Status === "Success" ? "ok" : "bad"}">${escapeHtml(r.Status)}</span><details><summary>${escapeHtml(resp.slice(0, 100) || "No response")}</summary><pre>${escapeHtml(r.Response || resp)}</pre></details>`;
+      const resp = r.DisplayResponse || r.Response || "", ok = r.Status === "Success";
+      row.dataset.response = r.Response || resp; row.dataset.status = r.Status; row.dataset.ok = ok ? "1" : "0";
+      row.querySelector(".guid-status").innerHTML = `<span class="pill ${ok ? "ok" : "bad"}">${escapeHtml(r.Status)}</span>`;
+      row.querySelector(".guid-response").innerHTML = `<details><summary>${escapeHtml(resp.slice(0, 160) || "No response")}</summary><pre>${escapeHtml(r.Response || resp)}</pre></details>`;
     });
     filterRows();
     const done = data.state === "completed" || data.state === "cancelled";
@@ -292,7 +270,12 @@
     $("toggle-token").setAttribute("aria-pressed", String(visible)); $("toggle-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Bearer token`); $("toggle-token").title = `${visible ? "Hide" : "Show"} Bearer token`;
     $("show-token-icon").hidden = visible; $("hide-token-icon").hidden = !visible;
   };
-  function resetForNewBatch() { if (socket) socket.close(); if (demo) demo.cancelled = true; jobId = null; demo = null; $("progress-card").hidden = true; $("download").hidden = true; $("retry").hidden = true; $("cancel").disabled = true; $("start").disabled = false; $("completion").textContent = ""; document.querySelectorAll("#guid-rows tr").forEach(row => { row.dataset.response = ""; row.querySelector(".guid-response").replaceChildren(); }); showError(""); }
+  function resetForNewBatch() {
+    if (socket) socket.close(); if (demo) demo.cancelled = true; jobId = null; demo = null; statusFilter = ""; document.querySelectorAll(".stat.active").forEach(c => c.classList.remove("active"));
+    $("progress-card").hidden = true; $("download").hidden = true; $("retry").hidden = true; $("cancel").disabled = true; $("start").disabled = false; $("completion").textContent = "";
+    document.querySelectorAll("#guid-rows tr").forEach(row => { row.dataset.response = ""; row.dataset.status = ""; delete row.dataset.ok; row.querySelector(".guid-status").replaceChildren(); row.querySelector(".guid-response").replaceChildren(); });
+    showError("");
+  }
   $("clear-table").onclick = async () => {
     $("clear-table").disabled = true;
     try {
@@ -301,30 +284,23 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "The active job could not be cancelled.");
       }
-      resetForNewBatch();
-      tablePasteLocked = false;
-      renderGrid();
-      $("result-search").value = "";
-      $("bar").style.width = "0%";
+      resetForNewBatch(); tablePasteLocked = false; renderGrid(); $("result-search").value = ""; $("bar").style.width = "0%";
       ["total", "completed", "successful", "failed", "remaining"].forEach(id => $(id).textContent = "0");
-      $("processing-title").textContent = "Processing";
-      $("live-status").textContent = "Ready";
-      delete $("live-status").dataset.state;
-      $("status-message").textContent = "Starting...";
-      $("current").textContent = "-";
-      filterRows();
-      setTokenExpired(false);
-      showToast("Table and processing results cleared.");
-    } catch (error) {
-      showError(`Unable to clear the table: ${error.message}`);
-    } finally {
-      $("clear-table").disabled = false;
-    }
+      $("processing-title").textContent = "Processing"; $("live-status").textContent = "Ready"; delete $("live-status").dataset.state;
+      $("status-message").textContent = "Starting..."; $("current").textContent = "-";
+      filterRows(); setTokenExpired(false); showToast("Table and processing results cleared.");
+    } catch (error) { showError(`Unable to clear the table: ${error.message}`); }
+    finally { $("clear-table").disabled = false; }
   };
   $("guid-rows").addEventListener("paste", pasteIntoGrid);
   renderGrid();
-  function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => { const values = [...row.querySelectorAll("input")].map(input => input.value).join(" "); row.hidden = Boolean(q) && !(row.textContent + values).toLowerCase().includes(q); }); }
+  function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(row => { const values = [...row.querySelectorAll("input")].map(input => input.value).join(" "); row.hidden = (Boolean(q) && !(row.textContent + values).toLowerCase().includes(q)) || (Boolean(statusFilter) && row.dataset.ok !== statusFilter); }); }
   $("result-search").oninput = filterRows;
+  document.querySelectorAll(".stat[data-filter]").forEach(chip => chip.onclick = () => {
+    statusFilter = chip.dataset.filter === "all" || statusFilter === chip.dataset.filter ? "" : chip.dataset.filter;
+    document.querySelectorAll(".stat[data-filter]").forEach(c => c.classList.toggle("active", Boolean(statusFilter) && c.dataset.filter === statusFilter));
+    filterRows();
+  });
 
   // Demo simulation (preview only, see DEMO_FALLBACK)
   function runDemo(guids) {
@@ -348,19 +324,21 @@
     e.preventDefault(); showError("");
     const token = $("token").value.trim(), direct = [...new Set(gridValues())].join("\n");
     const populatedRows = [...$("guid-rows").rows].map((row, index) => ({
-      index: index + 1,
-      date: row.querySelector('[data-field="Date"]').value.trim(),
-      serviceguid: row.querySelector('[data-field="serviceguid"]').value.trim()
+      index: index + 1, date: row.querySelector('[data-field="Date"]').value.trim(), serviceguid: row.querySelector('[data-field="serviceguid"]').value.trim()
     })).filter(row => row.date || row.serviceguid);
     if (!token) return showError("Enter a token before processing.");
-    if (!populatedRows.length || populatedRows.some(row => !row.date || !row.serviceguid)) {
-      return showError("Date and serviceguid are required for every pasted row.");
+    if (!populatedRows.length) return showError("Paste data into the table before processing.");
+    const errors = validateRows();
+    if (errors.length) {
+      $("message").textContent = `${errors.length} invalid value${errors.length > 1 ? "s" : ""} found. Nothing was sent.\n` + errors.slice(0, 6).join("\n") + (errors.length > 6 ? `\n…and ${errors.length - 6} more` : "");
+      showToast("Fix the highlighted cells before processing.", "error");
+      document.querySelector("#guid-rows input.invalid").scrollIntoView({ block: "center" });
+      return;
     }
     store.set("service-guid-bearer-token", token); updateTokenPill();
     const form = new FormData(); form.append("bearer_token", token); form.append("guids", direct);
     form.append("organization_code", $("organization-code").value.trim()); form.append("group_code", $("group-code").value.trim()); form.append("source_code", $("source-code").value.trim());
-    $("start").disabled = true;
-    $("clear-table").disabled = true;
+    $("start").disabled = true; $("clear-table").disabled = true;
     try {
       let response = null; try { response = await fetch("/api/jobs", { method: "POST", body: form }); } catch {}
       if (DEMO_FALLBACK && (!response || [404, 405].includes(response.status))) { $("cancel").disabled = false; return runDemo([...new Set(gridValues())]); }
@@ -377,8 +355,8 @@
   }
   $("cancel").onclick = async () => { if (demo) { demo.cancelled = true; return; } if (jobId) await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" }); };
   $("download").onclick = () => {
-    const rows = [...$("guid-rows").rows].map(row => [...row.querySelectorAll("input")].map(input => input.value).concat(row.dataset.response || ""));
-    const csv = [TABLE_FIELDS, ...rows].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const rows = [...$("guid-rows").rows].map(row => [...row.querySelectorAll("input")].map(input => input.value).concat(row.dataset.status || "", row.dataset.response || ""));
+    const csv = [[...INPUT_FIELDS, "Status", "Response"], ...rows].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const link = document.createElement("a"); link.href = url; link.download = "service-guid-results.csv"; document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
