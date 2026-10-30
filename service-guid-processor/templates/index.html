@@ -44,19 +44,19 @@
   <header class="hero"><div><h1>Service GUID Processor</h1><p class="muted">Send serviceGUID requests and monitor every result in real time.</p></div><span class="badge">● Local processing</span></header>
   <section class="card">
     <form id="start-form">
-      <label for="token">Bearer token</label>
       <div class="section-title"><h2>Authentication</h2><span class="status-pill">Token saved locally</span></div>
       <label for="token">Bearer token</label><div class="token-row"><input id="token" type="password" required autocomplete="off" placeholder="Saved locally until you update it"><button type="button" id="save-token" class="secondary">Save Token</button></div>
-      <section id="progress-card" class="card" hidden>
-        <div class="section-title"><h2 id="processing-title">Processing</h2><span id="live-status" class="status-pill">Ready</span></div><div class="progress"><div id="bar" class="bar"></div></div>
-        <p id="status-message">Starting...</p><p>Currently Processing: <span id="current" class="current">-</span></p>
-        <div class="stats"><div class="stat">Total<b id="total">0</b></div><div class="stat">Completed<b id="completed">0</b></div><div class="stat">Successful<b id="successful">0</b></div><div class="stat">Failed<b id="failed">0</b></div><div class="stat">Remaining<b id="remaining">0</b></div></div>
-      </section>
       <div class="options"><div><label for="guid-input">Paste serviceGUID values</label><textarea id="guid-input" placeholder="Paste one serviceGUID per line"></textarea></div></div>
       <div class="toolbar"><button id="start">Start Processing</button><span id="input-count" class="muted"></span></div>
     </form>
     <p id="message" class="error"></p>
   </section>
+  <section id="progress-card" class="card" hidden>
+    <div class="section-title"><h2 id="processing-title">Processing</h2><span id="live-status" class="status-pill">Ready</span></div><div class="progress"><div id="bar" class="bar"></div></div>
+    <p id="status-message">Starting...</p><p>Currently Processing: <span id="current" class="current">-</span></p>
+    <div class="stats"><div class="stat">Total<b id="total">0</b></div><div class="stat">Completed<b id="completed">0</b></div><div class="stat">Successful<b id="successful">0</b></div><div class="stat">Failed<b id="failed">0</b></div><div class="stat">Remaining<b id="remaining">0</b></div></div>
+  </section>
+
   <section id="results-card" class="card" hidden>
     <div class="results-tools"><div class="section-title"><h2>Service GUID Results</h2><span class="muted">Live row-by-row updates</span></div><input id="result-search" class="search" placeholder="Search GUID or response"></div><div class="guid-grid"><table><thead><tr><th>#</th><th>serviceGUID</th><th>Status</th><th>Response / Result</th><th></th></tr></thead><tbody id="guid-rows"></tbody></table></div>
     <div class="toolbar"><button type="button" id="add-guid" class="secondary">+ Add Row</button></div>

@@ -1,14 +1,18 @@
 import asyncio
 import csv
 import io
+import json
 import os
+import re
+import tempfile
 import threading
 import uuid
 from datetime import datetime
-import re
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
@@ -19,8 +23,27 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 API_URL = os.getenv("API_URL", "").strip()
 API_USERNAME = os.getenv("API_USERNAME", "").strip()
 API_PASSWORD = os.getenv("API_PASSWORD", "").strip()
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
 DELAY_SECONDS = 2
+
+# Retry up to 3 times on connection-level failures (RemoteDisconnected, reset, etc.).
+# backoff_factor=1 means waits: 0s, 2s, 4s between retries.
+_RETRY = Retry(
+    total=3,
+    backoff_factor=1,
+    allowed_methods={"POST"},
+    status_forcelist={502, 503, 504},
+    raise_on_status=False,
+)
+
+
+def _make_session() -> requests.Session:
+    """Return a Session that retries on transient connection errors."""
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=_RETRY)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 app = FastAPI(title="Service GUID Processor")
 app.mount("/templates", StaticFiles(directory=os.path.join(BASE_DIR, "templates")), name="templates")
@@ -49,7 +72,7 @@ def empty_result(guid: str, status: str, response: str, http_code: Any = "") -> 
 
 def clean_response(response: str) -> str:
     try:
-        data = __import__("json").loads(response)
+        data = json.loads(response)
     except (TypeError, ValueError):
         return response[:500]
     if isinstance(data, dict):
@@ -86,57 +109,67 @@ def build_payload(service_guid: str) -> dict[str, Any]:
 def run_job(job_id: str) -> None:
     job = jobs[job_id]
     job["state"] = "processing"
+
+    # Resolve the API URL once — avoids repeated disk I/O inside the loop.
+    api_url = configured_api_url()
+    if not api_url:
+        job["state"] = "completed"
+        job["status_message"] = "Error: API_URL is not configured in .env."
+        return
+
     headers = {
         "Authorization": f"Bearer {job['token']}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        # Disable keep-alive so each request gets a fresh connection.
+        # This prevents RemoteDisconnected errors when the server closes
+        # an idle pooled connection between requests.
+        "Connection": "close",
     }
-    for position, guid in enumerate(job["guids"]):
-        if job["cancel_event"].is_set():
-            break
-        job["current"] = guid
-        job["status_message"] = "Sending API request..."
-        try:
-            api_url = configured_api_url()
-            if not api_url:
-                raise RuntimeError("API_URL is not configured in .env.")
-            request_params = {}
-            if "?" not in api_url:
-                if API_USERNAME:
-                    request_params["user"] = API_USERNAME
-                if API_PASSWORD:
-                    request_params["password"] = API_PASSWORD
-            response = requests.post(
-                api_url,
-                params=request_params,
-                headers=headers,
-                json=build_payload(guid),
-                timeout=REQUEST_TIMEOUT,
-            )
-            status = "Success" if response.ok else "Failed"
-            result = empty_result(guid, status, response.text, response.status_code)
-        except requests.exceptions.RequestException as exc:
-            result = empty_result(guid, "Failed", f"REQUEST ERROR: {exc}", "")
-        except Exception as exc:
-            result = empty_result(guid, "Failed", f"UNEXPECTED ERROR: {exc}", "")
+    request_params: dict[str, str] = {}
+    if "?" not in api_url:
+        if API_USERNAME:
+            request_params["user"] = API_USERNAME
+        if API_PASSWORD:
+            request_params["password"] = API_PASSWORD
 
-        with job["lock"]:
-            job["results"].append(result)
-            job["completed"] += 1
-            if result["Status"] == "Success":
-                job["successful"] += 1
-            else:
-                job["failed"] += 1
-        job["status_message"] = "Request completed."
-        if position < len(job["guids"]) - 1 and not job["cancel_event"].wait(DELAY_SECONDS):
-            continue
-        if job["cancel_event"].is_set():
-            break
+    with _make_session() as session:
+        for position, guid in enumerate(job["guids"]):
+            if job["cancel_event"].is_set():
+                break
+            job["current"] = guid
+            job["status_message"] = "Sending API request..."
+            try:
+                response = session.post(
+                    api_url,
+                    params=request_params,
+                    headers=headers,
+                    json=build_payload(guid),
+                    timeout=REQUEST_TIMEOUT,
+                )
+                status = "Success" if response.ok else "Failed"
+                result = empty_result(guid, status, response.text, response.status_code)
+            except requests.exceptions.RequestException as exc:
+                result = empty_result(guid, "Failed", f"REQUEST ERROR: {exc}", "")
+            except Exception as exc:
+                result = empty_result(guid, "Failed", f"UNEXPECTED ERROR: {exc}", "")
+
+            with job["lock"]:
+                job["results"].append(result)
+                job["completed"] += 1
+                if result["Status"] == "Success":
+                    job["successful"] += 1
+                else:
+                    job["failed"] += 1
+            job["status_message"] = "Request completed."
+            if position < len(job["guids"]) - 1 and not job["cancel_event"].wait(DELAY_SECONDS):
+                continue
+            if job["cancel_event"].is_set():
+                break
 
     job["current"] = ""
     job["state"] = "cancelled" if job["cancel_event"].is_set() else "completed"
     job["status_message"] = "Processing cancelled." if job["state"] == "cancelled" else "Processing complete."
-
 
 def create_job(token: str, guids: list[str]) -> str:
     job_id = uuid.uuid4().hex
@@ -210,11 +243,20 @@ async def job_status(job_id: str) -> dict[str, Any]:
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    # Snapshot results inside the lock to avoid a race with the writer thread.
+    with job["lock"]:
+        results_snapshot = list(job["results"])
     return {
-        "id": job["id"], "state": job["state"], "status_message": job["status_message"],
-        "current": job["current"], "total": len(job["guids"]), "completed": job["completed"],
-        "successful": job["successful"], "failed": job["failed"],
-        "remaining": len(job["guids"]) - job["completed"], "results": job["results"],
+        "id": job["id"],
+        "state": job["state"],
+        "status_message": job["status_message"],
+        "current": job["current"],
+        "total": len(job["guids"]),
+        "completed": job["completed"],
+        "successful": job["successful"],
+        "failed": job["failed"],
+        "remaining": len(job["guids"]) - job["completed"],
+        "results": results_snapshot,
     }
 
 
@@ -239,13 +281,31 @@ async def download_results(job_id: str) -> FileResponse:
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    # Snapshot results to avoid holding the lock while doing file I/O.
+    with job["lock"]:
+        results_snapshot = list(job["results"])
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["serviceGUID", "Status", "HTTP Code", "Response"])
     writer.writeheader()
-    writer.writerows(job["results"])
-    results_dir = os.path.join(BASE_DIR, "results")
-    path = os.path.join(results_dir, f"service-guid-results-{job_id}.csv")
-    os.makedirs(results_dir, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as destination:
-        destination.write(output.getvalue())
-    return FileResponse(path, filename=os.path.basename(path), media_type="text/csv")
+    # extrasaction='ignore' silently drops the DisplayResponse key that is
+    # present in results but not in the CSV fieldnames.
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["serviceGUID", "Status", "HTTP Code", "Response"],
+        extrasaction="ignore",
+    )
+    writer.writeheader()
+    writer.writerows(results_snapshot)
+    # Write to a named temp file so we don't accumulate files in results/.
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", prefix=f"service-guid-results-{job_id}-",
+        delete=False, newline="", encoding="utf-8",
+    )
+    tmp.write(output.getvalue())
+    tmp.close()
+    return FileResponse(
+        tmp.name,
+        filename=f"service-guid-results-{job_id}.csv",
+        media_type="text/csv",
+        background=None,
+    )
