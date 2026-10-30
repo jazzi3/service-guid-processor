@@ -147,7 +147,6 @@
         <div class="card-head"><h2>Queue &amp; results</h2><span class="muted small">Live row-by-row updates</span><input id="result-search" class="search spacer" placeholder="Search GUID or response"></div>
         <div class="grid"><table><thead><tr><th>#</th><th>serviceGUID</th><th>Status</th><th>Response / result</th><th></th></tr></thead><tbody id="guid-rows"></tbody></table></div>
         <div class="actions">
-          <button type="button" id="add-guid">+ Add row</button>
           <span class="spacer"></span>
           <button type="button" id="retry" hidden>Retry failed IDs</button>
           <button type="button" id="download" class="primary" hidden>Download results</button>
@@ -215,7 +214,6 @@
   };
 
   function resetForNewBatch() { if (socket) socket.close(); if (demo) demo.cancelled = true; jobId = null; demo = null; $("progress-card").hidden = true; $("download").hidden = true; $("retry").hidden = true; $("cancel").disabled = true; $("start").disabled = false; $("completion").textContent = ""; showError(""); }
-  $("add-guid").onclick = () => { addGuidRow(); updateCount(); };
   $("guid-input").oninput = () => { resetForNewBatch(); renderGrid($("guid-input").value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)); };
   renderGrid([]);
   function filterRows() { const q = $("result-search").value.trim().toLowerCase(); document.querySelectorAll("#guid-rows tr").forEach(r => r.hidden = Boolean(q) && !r.textContent.toLowerCase().includes(q) && !r.querySelector("input").value.toLowerCase().includes(q)); }
