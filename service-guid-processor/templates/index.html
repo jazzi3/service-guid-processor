@@ -273,17 +273,17 @@
     });
     filterRows();
     const done = data.state === "completed" || data.state === "cancelled";
-    $("cancel").disabled = done || data.sharepoint_status === "saving"; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0 || data.auth_expired;
+    $("cancel").disabled = done || data.workbook_status === "saving"; $("download").hidden = !done; $("retry").hidden = !done || data.failed === 0 || data.auth_expired;
     $("clear-table").disabled = !done; if (done) lockFirstCell(false);
     if (done) {
       const completion = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
-      const sharepointSummary = data.sharepoint_status === "saved"
-        ? ` SharePoint: appended ${data.sharepoint_added} record(s), updated ${data.sharepoint_updated} existing record(s).`
-        : data.sharepoint_status === "error" ? ` Excel file was not updated: ${data.sharepoint_error}` : "";
-      $("completion").textContent = completion + sharepointSummary;
-      const notificationType = data.auth_expired ? "error" : data.sharepoint_status === "error" ? "warning" : "success";
-      const notification = data.sharepoint_status === "error" && !data.auth_expired
-        ? `Processing completed, but the Excel save failed: ${data.sharepoint_error}`
+      const workbookSummary = data.workbook_status === "saved"
+        ? ` Google Drive: appended ${data.workbook_added} record(s), updated ${data.workbook_updated} existing record(s).`
+        : data.workbook_status === "error" ? ` Excel file was not updated: ${data.workbook_error}` : "";
+      $("completion").textContent = completion + workbookSummary;
+      const notificationType = data.auth_expired ? "error" : data.workbook_status === "error" ? "warning" : "success";
+      const notification = data.workbook_status === "error" && !data.auth_expired
+        ? `Processing completed, but the Google Drive Excel save failed: ${data.workbook_error}`
         : $("completion").textContent;
       $("start").disabled = false; showToast(notification, notificationType);
     }

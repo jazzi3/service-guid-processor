@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import csv
 import io
 import json
@@ -16,6 +15,9 @@ from urllib.parse import quote
 from xml.etree.ElementTree import ParseError
 
 import requests
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.service_account import Credentials
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import range_boundaries
@@ -32,14 +34,17 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 API_URL = os.getenv("API_URL", "").strip()
 API_USERNAME = os.getenv("API_USERNAME", "").strip()
 API_PASSWORD = os.getenv("API_PASSWORD", "").strip()
-MS_TENANT_ID = os.getenv("MS_TENANT_ID", "").strip()
-MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "").strip()
-MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET", "").strip()
-SHAREPOINT_FILE_URL = os.getenv("SHAREPOINT_FILE_URL", "").strip()
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+GOOGLE_DRIVE_FILE_ID = os.getenv(
+    "GOOGLE_DRIVE_FILE_ID",
+    "18IowWJwC-_fUnJnAqPjKmHXRBQKbWQjU",
+).strip()
 REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
 DELAY_SECONDS = 2
-GRAPH_URL = "https://graph.microsoft.com/v1.0"
-SHAREPOINT_COLUMNS = (
+GOOGLE_DRIVE_API_URL = "https://www.googleapis.com/drive/v3"
+GOOGLE_DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3"
+GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+WORKBOOK_COLUMNS = (
     "Date",
     "serviceguid",
     "document_number",
@@ -50,7 +55,7 @@ SHAREPOINT_COLUMNS = (
     "Status",
     "Response",
 )
-_sharepoint_write_lock = threading.Lock()
+_workbook_write_lock = threading.Lock()
 
 # Retry up to 3 times on connection-level failures (RemoteDisconnected, reset, etc.).
 # backoff_factor=1 means waits: 0s, 2s, 4s between retries.
@@ -76,11 +81,11 @@ app.mount("/templates", StaticFiles(directory=os.path.join(BASE_DIR, "templates"
 jobs: dict[str, dict[str, Any]] = {}
 
 
-class SharePointExportError(Exception):
+class WorkbookExportError(Exception):
     pass
 
 
-def _graph_error(response: requests.Response, action: str) -> SharePointExportError:
+def _google_drive_error(response: requests.Response, action: str) -> WorkbookExportError:
     try:
         body = response.json()
     except ValueError:
@@ -88,43 +93,41 @@ def _graph_error(response: requests.Response, action: str) -> SharePointExportEr
     error = body.get("error") if isinstance(body, dict) else None
     message = error.get("message") if isinstance(error, dict) else None
     detail = f": {message}" if message else ""
-    return SharePointExportError(f"SharePoint {action} failed (HTTP {response.status_code}){detail}")
+    return WorkbookExportError(f"Google Drive {action} failed (HTTP {response.status_code}){detail}")
 
 
-def _sharepoint_access_token() -> str:
-    required = {
-        "MS_TENANT_ID": MS_TENANT_ID,
-        "MS_CLIENT_ID": MS_CLIENT_ID,
-        "MS_CLIENT_SECRET": MS_CLIENT_SECRET,
-        "SHAREPOINT_FILE_URL": SHAREPOINT_FILE_URL,
-    }
-    missing = [key for key, value in required.items() if not value]
+def _google_drive_access_token() -> str:
+    missing = [
+        name
+        for name, value in (
+            ("GOOGLE_SERVICE_ACCOUNT_JSON", GOOGLE_SERVICE_ACCOUNT_JSON),
+            ("GOOGLE_DRIVE_FILE_ID", GOOGLE_DRIVE_FILE_ID),
+        )
+        if not value
+    ]
     if missing:
-        raise SharePointExportError(
-            "SharePoint export is not configured. Set: " + ", ".join(missing)
+        raise WorkbookExportError(
+            "Google Drive export is not configured. Set: " + ", ".join(missing)
         )
     try:
-        response = requests.post(
-            f"https://login.microsoftonline.com/{quote(MS_TENANT_ID, safe='')}/oauth2/v2.0/token",
-            data={
-                "client_id": MS_CLIENT_ID,
-                "client_secret": MS_CLIENT_SECRET,
-                "scope": "https://graph.microsoft.com/.default",
-                "grant_type": "client_credentials",
-            },
-            timeout=30,
+        service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+        credentials = Credentials.from_service_account_info(
+            service_account_info,
+            scopes=[GOOGLE_DRIVE_SCOPE],
         )
-    except requests.exceptions.RequestException as exc:
-        raise SharePointExportError(f"Could not connect to Microsoft identity service: {exc}") from exc
-    if not response.ok:
-        raise _graph_error(response, "authentication")
-    try:
-        return response.json()["access_token"]
-    except (ValueError, KeyError, TypeError) as exc:
-        raise SharePointExportError("Microsoft identity service returned an invalid token response.") from exc
+        credentials.refresh(GoogleAuthRequest())
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise WorkbookExportError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON must contain valid Google service-account credentials."
+        ) from exc
+    except (GoogleAuthError, requests.exceptions.RequestException) as exc:
+        raise WorkbookExportError(f"Google Drive authentication failed: {exc}") from exc
+    if not credentials.token:
+        raise WorkbookExportError("Google authentication returned no access token.")
+    return credentials.token
 
 
-def _graph_request(
+def _google_drive_request(
     method: str,
     url: str,
     token: str,
@@ -137,15 +140,10 @@ def _graph_request(
     try:
         response = requests.request(method, url, headers=headers, timeout=60, **kwargs)
     except requests.exceptions.RequestException as exc:
-        raise SharePointExportError(f"Could not {action}: {exc}") from exc
+        raise WorkbookExportError(f"Could not {action}: {exc}") from exc
     if not response.ok:
-        raise _graph_error(response, action)
+        raise _google_drive_error(response, action)
     return response
-
-
-def _share_id(sharing_url: str) -> str:
-    encoded = base64.urlsafe_b64encode(sharing_url.encode("utf-8")).decode("ascii").rstrip("=")
-    return f"u!{encoded}"
 
 
 def _normalise_header(value: Any) -> str:
@@ -153,7 +151,7 @@ def _normalise_header(value: Any) -> str:
 
 
 def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int], bool]:
-    required = {_normalise_header(name) for name in SHAREPOINT_COLUMNS[:-1]}
+    required = {_normalise_header(name) for name in WORKBOOK_COLUMNS[:-1]}
     matches: list[tuple[Any, int, dict[str, int]]] = []
     for worksheet in workbook.worksheets:
         for row_number in range(1, worksheet.max_row + 1):
@@ -174,17 +172,17 @@ def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int], bool
         if not has_existing_data:
             worksheet = workbook.active
             headers: dict[str, int] = {}
-            for column_number, name in enumerate(SHAREPOINT_COLUMNS, start=1):
+            for column_number, name in enumerate(WORKBOOK_COLUMNS, start=1):
                 _set_text(worksheet.cell(1, column_number), name)
                 headers[_normalise_header(name)] = column_number
             return worksheet, 1, headers, True
-        expected = ", ".join(SHAREPOINT_COLUMNS[:-1])
-        raise SharePointExportError(
+        expected = ", ".join(WORKBOOK_COLUMNS[:-1])
+        raise WorkbookExportError(
             f"Could not find a worksheet row with the required headers: {expected}. "
             "Headers were not created because the workbook already contains data."
         )
     if len(matches) > 1:
-        raise SharePointExportError(
+        raise WorkbookExportError(
             "More than one worksheet header row matches the expected columns; no workbook changes were made."
         )
     worksheet, header_row, headers = matches[0]
@@ -198,7 +196,7 @@ def _set_text(cell: Any, value: Any) -> None:
 
 def _table_for_header(worksheet: Any, header_row: int, columns: dict[str, int]) -> Any:
     required_columns = [
-        columns[_normalise_header(name)] for name in SHAREPOINT_COLUMNS[:-1]
+        columns[_normalise_header(name)] for name in WORKBOOK_COLUMNS[:-1]
     ]
     for table in worksheet.tables.values():
         min_column, min_row, max_column, _ = range_boundaries(table.ref)
@@ -211,35 +209,49 @@ def _table_for_header(worksheet: Any, header_row: int, columns: dict[str, int]) 
     return None
 
 
-def append_results_to_sharepoint(
+def append_results_to_google_drive(
     records: dict[str, dict[str, str]],
     results: list[dict[str, Any]],
 ) -> tuple[int, int]:
-    token = _sharepoint_access_token()
-    encoded_share = quote(_share_id(SHAREPOINT_FILE_URL), safe="")
-    metadata_url = f"{GRAPH_URL}/shares/{encoded_share}/driveItem"
+    token = _google_drive_access_token()
+    file_id = quote(GOOGLE_DRIVE_FILE_ID, safe="")
+    metadata_url = f"{GOOGLE_DRIVE_API_URL}/files/{file_id}"
 
-    with _sharepoint_write_lock:
+    with _workbook_write_lock:
         try:
-            item = _graph_request("GET", metadata_url, token, "locate workbook").json()
+            metadata_response = _google_drive_request(
+                "GET",
+                metadata_url,
+                token,
+                "locate workbook",
+                params={"fields": "id,name,mimeType,version"},
+            )
+            item = metadata_response.json()
         except ValueError as exc:
-            raise SharePointExportError("Microsoft Graph returned invalid workbook metadata.") from exc
+            raise WorkbookExportError("Google Drive returned invalid workbook metadata.") from exc
         try:
-            drive_id = item["parentReference"]["driveId"]
             item_id = item["id"]
-            etag = item["eTag"]
+            mime_type = item["mimeType"]
+            file_version = item["version"]
         except (KeyError, TypeError) as exc:
-            raise SharePointExportError("Microsoft Graph returned incomplete workbook metadata.") from exc
-        content_url = (
-            f"{GRAPH_URL}/drives/{quote(drive_id, safe='')}/items/"
-            f"{quote(item_id, safe='')}/content"
+            raise WorkbookExportError("Google Drive returned incomplete workbook metadata.") from exc
+        if mime_type != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+            raise WorkbookExportError(
+                "The Google Drive file must be an uploaded .xlsx workbook, not a native Google Sheet or another file type."
+            )
+        content_url = f"{GOOGLE_DRIVE_API_URL}/files/{quote(item_id, safe='')}"
+        content_response = _google_drive_request(
+            "GET",
+            content_url,
+            token,
+            "download workbook",
+            params={"alt": "media"},
         )
-        content_response = _graph_request("GET", content_url, token, "download workbook")
         try:
             workbook = load_workbook(io.BytesIO(content_response.content))
         except (BadZipFile, InvalidFileException, OSError, ParseError, TypeError, ValueError) as exc:
-            raise SharePointExportError(
-                "The SharePoint file could not be opened as a standard .xlsx workbook."
+            raise WorkbookExportError(
+                "The Google Drive file could not be opened as a standard .xlsx workbook."
             ) from exc
 
         worksheet, header_row, headers, headers_created = _find_workbook_header(workbook)
@@ -249,7 +261,7 @@ def append_results_to_sharepoint(
         if response_added:
             response_column = max(headers.values()) + 1
             if response_column > 16384:
-                raise SharePointExportError("There is no available Excel column for the Response field.")
+                raise WorkbookExportError("There is no available Excel column for the Response field.")
             headers[response_key] = response_column
             header_cell = worksheet.cell(header_row, response_column)
             _set_text(header_cell, "Response")
@@ -305,7 +317,7 @@ def append_results_to_sharepoint(
         for metadata, result in new_rows:
             target_row = last_data_row + 1
             if target_row > 1_048_576:
-                raise SharePointExportError("The worksheet has no remaining rows for new records.")
+                raise WorkbookExportError("The worksheet has no remaining rows for new records.")
             output_values = {
                 _normalise_header("Date"): metadata.get("date", ""),
                 _normalise_header("serviceguid"): result.get("serviceGUID", ""),
@@ -337,7 +349,7 @@ def append_results_to_sharepoint(
             new_max_column = max(max_column, headers[response_key])
             if new_max_column > max_column:
                 if headers[response_key] != max_column + 1:
-                    raise SharePointExportError(
+                    raise WorkbookExportError(
                         "The Response column must immediately follow the existing Excel table columns."
                     )
                 from openpyxl.worksheet.table import TableColumn
@@ -357,16 +369,38 @@ def append_results_to_sharepoint(
             try:
                 workbook.save(output)
             except (OSError, TypeError, ValueError) as exc:
-                raise SharePointExportError("The updated Excel workbook could not be prepared for upload.") from exc
-            _graph_request(
-                "PUT",
-                content_url,
+                raise WorkbookExportError("The updated Excel workbook could not be prepared for upload.") from exc
+
+            upload_headers = {
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            }
+            etag = metadata_response.headers.get("ETag")
+            if etag:
+                upload_headers["If-Match"] = etag
+            else:
+                try:
+                    latest = _google_drive_request(
+                        "GET",
+                        metadata_url,
+                        token,
+                        "verify workbook has not changed",
+                        params={"fields": "version"},
+                    ).json()
+                except ValueError as exc:
+                    raise WorkbookExportError(
+                        "Google Drive returned invalid workbook version metadata."
+                    ) from exc
+                if str(latest.get("version")) != str(file_version):
+                    raise WorkbookExportError(
+                        "The workbook changed while records were being prepared; no upload was made. Retry the save."
+                    )
+            _google_drive_request(
+                "PATCH",
+                f"{GOOGLE_DRIVE_UPLOAD_URL}/files/{quote(item_id, safe='')}",
                 token,
-                "append records to workbook",
-                headers={
-                    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "If-Match": etag,
-                },
+                "save workbook",
+                params={"uploadType": "media"},
+                headers=upload_headers,
                 data=output.getvalue(),
             )
         return len(new_rows), updated
@@ -567,19 +601,19 @@ def run_job(job_id: str) -> None:
 
     job["current"] = ""
     with job["lock"]:
-        save_to_sharepoint = not job["cancel_event"].is_set() and bool(job["results"])
-        if save_to_sharepoint:
-            job["sharepoint_status"] = "saving"
-    if save_to_sharepoint:
-        job["status_message"] = "Processing complete. Saving records to SharePoint..."
+        save_to_workbook = not job["cancel_event"].is_set() and bool(job["results"])
+        if save_to_workbook:
+            job["workbook_status"] = "saving"
+    if save_to_workbook:
+        job["status_message"] = "Processing complete. Saving records to Google Drive..."
         try:
-            added, updated = append_results_to_sharepoint(job.get("records", {}), job["results"])
-            job["sharepoint_status"] = "saved"
-            job["sharepoint_added"] = added
-            job["sharepoint_updated"] = updated
-        except SharePointExportError as exc:
-            job["sharepoint_status"] = "error"
-            job["sharepoint_error"] = str(exc)
+            added, updated = append_results_to_google_drive(job.get("records", {}), job["results"])
+            job["workbook_status"] = "saved"
+            job["workbook_added"] = added
+            job["workbook_updated"] = updated
+        except WorkbookExportError as exc:
+            job["workbook_status"] = "error"
+            job["workbook_error"] = str(exc)
     job["state"] = "cancelled" if job["cancel_event"].is_set() else "completed"
     if job["state"] == "cancelled":
         job["status_message"] = "Processing cancelled."
@@ -607,10 +641,10 @@ def create_job(
         "state": "starting",
         "status_message": "Starting...",
         "auth_expired": False,
-        "sharepoint_status": "pending",
-        "sharepoint_added": 0,
-        "sharepoint_updated": 0,
-        "sharepoint_error": "",
+        "workbook_status": "pending",
+        "workbook_added": 0,
+        "workbook_updated": 0,
+        "workbook_error": "",
         "current": "",
         "completed": 0,
         "successful": 0,
@@ -669,8 +703,8 @@ async def cancel_job(job_id: str) -> dict[str, str]:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     with job["lock"]:
-        if job["sharepoint_status"] == "saving":
-            raise HTTPException(status_code=409, detail="Processing is finished; the SharePoint save cannot be cancelled.")
+        if job["workbook_status"] == "saving":
+            raise HTTPException(status_code=409, detail="Processing is finished; the Google Drive save cannot be cancelled.")
         job["cancel_event"].set()
     return {"message": "Cancellation requested."}
 
@@ -716,10 +750,10 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "failed": job["failed"],
         "remaining": len(job["guids"]) - job["completed"],
         "auth_expired": job["auth_expired"],
-        "sharepoint_status": job["sharepoint_status"],
-        "sharepoint_added": job["sharepoint_added"],
-        "sharepoint_updated": job["sharepoint_updated"],
-        "sharepoint_error": job["sharepoint_error"],
+        "workbook_status": job["workbook_status"],
+        "workbook_added": job["workbook_added"],
+        "workbook_updated": job["workbook_updated"],
+        "workbook_error": job["workbook_error"],
         "results": results_snapshot,
     }
 

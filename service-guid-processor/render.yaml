@@ -12,11 +12,7 @@ services:
         sync: false
       - key: API_PASSWORD
         sync: false
-      - key: MS_TENANT_ID
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false
-      - key: MS_CLIENT_ID
-        sync: false
-      - key: MS_CLIENT_SECRET
-        sync: false
-      - key: SHAREPOINT_FILE_URL
-        sync: false
+      - key: GOOGLE_DRIVE_FILE_ID
+        value: 18IowWJwC-_fUnJnAqPjKmHXRBQKbWQjU

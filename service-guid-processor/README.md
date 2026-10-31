@@ -11,7 +11,7 @@ It supports:
 - Stops and highlights the token when the first GUID returns an upstream failure other than a network error, or when the API explicitly reports an authentication failure
 - Marks the token field with a red Expired indicator when an authentication error is confirmed
 - Live progress, cancellation, retry of failed IDs, and CSV result download
-- Automatic SharePoint workbook save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
+- Automatic Google Drive Excel save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
 
 ## Run on localhost (Windows)
 
@@ -87,36 +87,39 @@ The deployed service uses the bearer token entered in the page. Render
 provides HTTPS automatically, and the app's WebSocket progress connection
 uses that secure connection automatically.
 
-### Configure automatic SharePoint workbook export
+### Configure automatic Google Drive workbook export
 
-The export uses Microsoft Graph app-only authentication and the SharePoint
-file's sharing URL. Register an app in Microsoft Entra ID, add the Microsoft
-Graph **Application** permission `Files.ReadWrite.All`, and have a tenant
-administrator grant consent. This application permission can grant broad
-file access in the tenant, so have an administrator approve it under your
-organization's access policy. Keep the application secret private.
+The exporter updates the uploaded `.xlsx` file in Google Drive through the
+Google Drive API. Enable the Drive API in a Google Cloud project, create a
+service account, and grant its email address **Editor** access to the workbook.
+The public “Anyone with the link can edit” setting is not a substitute for API
+authentication. Keep the service-account JSON private.
 
 Set these variables in the Render service's environment settings (or in the
 local `.env` file):
 
-- `MS_TENANT_ID`: Entra tenant ID
-- `MS_CLIENT_ID`: app registration's client ID
-- `MS_CLIENT_SECRET`: app registration client secret
-- `SHAREPOINT_FILE_URL`: the sharing URL for `Failed_Orders.xlsx`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON credential
+- `GOOGLE_DRIVE_FILE_ID`: the Drive file ID (defaults to the provided `Failed_Orders.xlsx`)
 
-Never commit `.env` or put the client secret in frontend code. The workbook
-must have a header row containing `Date`, `serviceguid`, `document_number`,
+Never commit `.env` or put service-account credentials in frontend code. The
+file must be an uploaded `.xlsx` workbook; native Google Sheets files are not
+supported by this exporter. The workbook must have a header row containing
+`Date`, `serviceguid`, `document_number`,
 `tenant_code`, `route_code`, `document_date`, `failure_reason`, `Status`, and
 `Response`. If the workbook is completely blank, the exporter creates this
 header row on the active worksheet before saving the first batch. It does not
 add headers to a non-empty workbook with an unrecognized layout. Each completed
 job appends new GUIDs and stores the API response.
 When a processed GUID already exists, its Status and Response are refreshed
-in place while the other existing cells are preserved. If the workbook changes
-concurrently, the exporter rejects that save instead of replacing newer edits.
-The job status reports export errors so failed saves are visible.
+in place while the other existing cells are preserved. Before uploading, the
+exporter uses the Drive ETag as a conditional write when available; otherwise
+it checks the file version again and rejects detected concurrent changes. The
+job status reports export errors so failed saves are visible.
 
-The app uses the Microsoft Graph shared-item and file-content APIs:
-[access shared files](https://learn.microsoft.com/graph/api/shares-get?view=graph-rest-1.0),
-[download file content](https://learn.microsoft.com/graph/api/driveitem-get-content?view=graph-rest-1.0),
-and [upload updated file content](https://learn.microsoft.com/graph/api/driveitem-put-content?view=graph-rest-1.0).
+Anyone-with-link editor access lets anyone with the link change the workbook.
+Restrict sharing to intended users and the service account if the data should
+not be publicly editable.
+
+The app uses the [Google Drive API file download](https://developers.google.com/drive/api/reference/rest/v3/files/get)
+and [file update](https://developers.google.com/drive/api/reference/rest/v3/files/update)
+endpoints.
