@@ -79,6 +79,10 @@
   tbody tr:hover { background:var(--soft); } tbody tr:last-child td { border-bottom:0; }
   tr[data-ok="1"] td:first-child { box-shadow:inset 3px 0 var(--ok); } tr[data-ok="0"] td:first-child { box-shadow:inset 3px 0 var(--bad); }
   table { table-layout:fixed; } th, td { padding:4px 8px; overflow:hidden; } th { padding:6px 8px; white-space:normal; overflow-wrap:anywhere; }
+  th:nth-child(1) { width:8%; } th:nth-child(2) { width:16%; }
+  th:nth-child(3) { width:12%; } th:nth-child(4), th:nth-child(5) { width:8%; }
+  th:nth-child(6) { width:11%; } th:nth-child(7) { width:12%; }
+  th:nth-child(8) { width:7%; } th:nth-child(9) { width:18%; }
   @media (max-width:1000px) { table { min-width:960px; } }
   .grid td input { padding:3px 6px; border:1px solid transparent; border-radius:8px; background:transparent; font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow:ellipsis; min-width:0; }
   .grid td input[readonly] { cursor:default; box-shadow:none; }
@@ -274,7 +278,7 @@
     if (done) {
       const completion = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
       const sharepointSummary = data.sharepoint_status === "saved"
-        ? ` SharePoint: appended ${data.sharepoint_added} record(s), skipped ${data.sharepoint_skipped} duplicate(s).`
+        ? ` SharePoint: appended ${data.sharepoint_added} record(s), updated ${data.sharepoint_updated} existing record(s).`
         : data.sharepoint_status === "error" ? ` SharePoint save failed: ${data.sharepoint_error}` : "";
       $("completion").textContent = completion + sharepointSummary;
       $("start").disabled = false; showToast($("completion").textContent, data.auth_expired || data.sharepoint_status === "error" ? "error" : "success");

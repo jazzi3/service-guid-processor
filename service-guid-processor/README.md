@@ -11,7 +11,7 @@ It supports:
 - Stops and highlights the token when the first GUID returns an upstream failure other than a network error, or when the API explicitly reports an authentication failure
 - Marks the token field with a red Expired indicator when an authentication error is confirmed
 - Live progress, cancellation, retry of failed IDs, and CSV result download
-- Automatic SharePoint workbook append after processing, with case-insensitive serviceGUID duplicate skipping and API responses stored in a Response column
+- Automatic SharePoint workbook save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
 
 ## Run on localhost (Windows)
 
@@ -108,8 +108,9 @@ Never commit `.env` or put the client secret in frontend code. The workbook
 must have a header row containing `Date`, `serviceguid`, `document_number`,
 `tenant_code`, `route_code`, `document_date`, `failure_reason`, and `Status`.
 If it does not already have `Response`, the exporter adds it as the last
-column. Each completed job appends non-duplicate GUIDs and stores the API
-response; existing GUID rows are left unchanged. If the workbook changes
+column. Each completed job appends new GUIDs and stores the API response.
+When a processed GUID already exists, its Status and Response are refreshed
+in place while the other existing cells are preserved. If the workbook changes
 concurrently, the exporter rejects that save instead of replacing newer edits.
 The job status reports export errors so failed saves are visible.
 

@@ -246,7 +246,7 @@ def append_results_to_sharepoint(
                 header_cell.number_format = source_style.number_format
 
         guid_column = headers[_normalise_header("serviceguid")]
-        existing_guids: set[str] = set()
+        existing_rows: dict[str, int] = {}
         last_data_row = header_row
         for row_number in range(header_row + 1, worksheet.max_row + 1):
             row_has_data = any(
@@ -257,19 +257,35 @@ def append_results_to_sharepoint(
                 last_data_row = row_number
             guid_value = worksheet.cell(row_number, guid_column).value
             if guid_value not in (None, ""):
-                existing_guids.add(str(guid_value).strip().casefold())
+                existing_rows.setdefault(str(guid_value).strip().casefold(), row_number)
 
         new_rows: list[tuple[dict[str, str], dict[str, Any]]] = []
-        seen_guids = set(existing_guids)
-        skipped = 0
+        existing_updates: list[tuple[int, dict[str, Any]]] = []
+        seen_guids: set[str] = set()
+        updated = 0
         for result in results:
             guid = str(result.get("serviceGUID", "")).strip()
             normalized_guid = guid.casefold()
             if not normalized_guid or normalized_guid in seen_guids:
-                skipped += 1
                 continue
             seen_guids.add(normalized_guid)
+            existing_row = existing_rows.get(normalized_guid)
+            if existing_row is not None:
+                existing_updates.append((existing_row, result))
+                updated += 1
+                continue
             new_rows.append((records.get(normalized_guid, {}), result))
+
+        for target_row, result in existing_updates:
+            output_values = {
+                _normalise_header("Status"): (
+                    "Successfully" if result.get("Status") == "Success" else "Failed"
+                ),
+                response_key: result.get("Response", ""),
+            }
+            for normalized_header, value in output_values.items():
+                _set_text(worksheet.cell(target_row, headers[normalized_header]), value)
+            workbook_changed = True
 
         for metadata, result in new_rows:
             target_row = last_data_row + 1
@@ -338,7 +354,7 @@ def append_results_to_sharepoint(
                 },
                 data=output.getvalue(),
             )
-        return len(new_rows), skipped
+        return len(new_rows), updated
 
 
 def configured_api_url() -> str:
@@ -542,10 +558,10 @@ def run_job(job_id: str) -> None:
     if save_to_sharepoint:
         job["status_message"] = "Processing complete. Saving records to SharePoint..."
         try:
-            added, skipped = append_results_to_sharepoint(job.get("records", {}), job["results"])
+            added, updated = append_results_to_sharepoint(job.get("records", {}), job["results"])
             job["sharepoint_status"] = "saved"
             job["sharepoint_added"] = added
-            job["sharepoint_skipped"] = skipped
+            job["sharepoint_updated"] = updated
         except SharePointExportError as exc:
             job["sharepoint_status"] = "error"
             job["sharepoint_error"] = str(exc)
@@ -578,7 +594,7 @@ def create_job(
         "auth_expired": False,
         "sharepoint_status": "pending",
         "sharepoint_added": 0,
-        "sharepoint_skipped": 0,
+        "sharepoint_updated": 0,
         "sharepoint_error": "",
         "current": "",
         "completed": 0,
@@ -687,7 +703,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "auth_expired": job["auth_expired"],
         "sharepoint_status": job["sharepoint_status"],
         "sharepoint_added": job["sharepoint_added"],
-        "sharepoint_skipped": job["sharepoint_skipped"],
+        "sharepoint_updated": job["sharepoint_updated"],
         "sharepoint_error": job["sharepoint_error"],
         "results": results_snapshot,
     }
