@@ -93,7 +93,7 @@
   .empty { padding:56px 16px; text-align:center; color:var(--muted); font-size:13px; } .empty b { display:block; color:var(--text); font-size:15px; margin-bottom:4px; }
 
   .toast { position:fixed; right:22px; bottom:22px; z-index:10; background:#172033; color:#fff; padding:12px 16px; border-radius:12px; box-shadow:0 10px 30px #17203355; opacity:0; transform:translateY(12px); transition:.2s; pointer-events:none; max-width:340px; }
-  .toast.show { opacity:1; transform:none; } .toast.success { background:#0f9d63; } .toast.error { background:#d92d20; }
+  .toast.show { opacity:1; transform:none; } .toast.success { background:#0f9d63; } .toast.warning { background:#b45309; } .toast.error { background:#d92d20; }
   @media (max-width:700px) { .wrap { padding:0 12px; } .topbar { flex-direction:column; align-items:flex-start; } .search { width:100%; } .stats { margin-left:0; } .codes { grid-template-columns:repeat(3,1fr); width:100%; } }
 </style>
 </head>
@@ -279,9 +279,13 @@
       const completion = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
       const sharepointSummary = data.sharepoint_status === "saved"
         ? ` SharePoint: appended ${data.sharepoint_added} record(s), updated ${data.sharepoint_updated} existing record(s).`
-        : data.sharepoint_status === "error" ? ` SharePoint save failed: ${data.sharepoint_error}` : "";
+        : data.sharepoint_status === "error" ? ` Excel file was not updated: ${data.sharepoint_error}` : "";
       $("completion").textContent = completion + sharepointSummary;
-      $("start").disabled = false; showToast($("completion").textContent, data.auth_expired || data.sharepoint_status === "error" ? "error" : "success");
+      const notificationType = data.auth_expired ? "error" : data.sharepoint_status === "error" ? "warning" : "success";
+      const notification = data.sharepoint_status === "error" && !data.auth_expired
+        ? `Processing completed, but the Excel save failed: ${data.sharepoint_error}`
+        : $("completion").textContent;
+      $("start").disabled = false; showToast(notification, notificationType);
     }
   }
 
