@@ -152,7 +152,7 @@ def _normalise_header(value: Any) -> str:
     return re.sub(r"[\s_-]+", "", str(value or "").strip().casefold())
 
 
-def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int]]:
+def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int], bool]:
     required = {_normalise_header(name) for name in SHAREPOINT_COLUMNS[:-1]}
     matches: list[tuple[Any, int, dict[str, int]]] = []
     for worksheet in workbook.worksheets:
@@ -165,15 +165,30 @@ def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int]]:
             if required.issubset(headers):
                 matches.append((worksheet, row_number, headers))
     if not matches:
+        has_existing_data = any(
+            cell.value not in (None, "")
+            for worksheet in workbook.worksheets
+            for row in worksheet.iter_rows()
+            for cell in row
+        )
+        if not has_existing_data:
+            worksheet = workbook.active
+            headers: dict[str, int] = {}
+            for column_number, name in enumerate(SHAREPOINT_COLUMNS, start=1):
+                _set_text(worksheet.cell(1, column_number), name)
+                headers[_normalise_header(name)] = column_number
+            return worksheet, 1, headers, True
         expected = ", ".join(SHAREPOINT_COLUMNS[:-1])
         raise SharePointExportError(
-            f"Could not find a worksheet row with the required headers: {expected}."
+            f"Could not find a worksheet row with the required headers: {expected}. "
+            "Headers were not created because the workbook already contains data."
         )
     if len(matches) > 1:
         raise SharePointExportError(
             "More than one worksheet header row matches the expected columns; no workbook changes were made."
         )
-    return matches[0]
+    worksheet, header_row, headers = matches[0]
+    return worksheet, header_row, headers, False
 
 
 def _set_text(cell: Any, value: Any) -> None:
@@ -227,9 +242,9 @@ def append_results_to_sharepoint(
                 "The SharePoint file could not be opened as a standard .xlsx workbook."
             ) from exc
 
-        worksheet, header_row, headers = _find_workbook_header(workbook)
+        worksheet, header_row, headers, headers_created = _find_workbook_header(workbook)
         response_key = _normalise_header("Response")
-        workbook_changed = response_key not in headers
+        workbook_changed = headers_created or response_key not in headers
         response_added = response_key not in headers
         if response_added:
             response_column = max(headers.values()) + 1

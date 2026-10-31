@@ -102,13 +102,15 @@ local `.env` file):
 - `MS_TENANT_ID`: Entra tenant ID
 - `MS_CLIENT_ID`: app registration's client ID
 - `MS_CLIENT_SECRET`: app registration client secret
-- `SHAREPOINT_FILE_URL`: the sharing URL for `Failed Order Data.xlsx`
+- `SHAREPOINT_FILE_URL`: the sharing URL for `Failed_Orders.xlsx`
 
 Never commit `.env` or put the client secret in frontend code. The workbook
 must have a header row containing `Date`, `serviceguid`, `document_number`,
-`tenant_code`, `route_code`, `document_date`, `failure_reason`, and `Status`.
-If it does not already have `Response`, the exporter adds it as the last
-column. Each completed job appends new GUIDs and stores the API response.
+`tenant_code`, `route_code`, `document_date`, `failure_reason`, `Status`, and
+`Response`. If the workbook is completely blank, the exporter creates this
+header row on the active worksheet before saving the first batch. It does not
+add headers to a non-empty workbook with an unrecognized layout. Each completed
+job appends new GUIDs and stores the API response.
 When a processed GUID already exists, its Status and Response are refreshed
 in place while the other existing cells are preserved. If the workbook changes
 concurrently, the exporter rejects that save instead of replacing newer edits.
