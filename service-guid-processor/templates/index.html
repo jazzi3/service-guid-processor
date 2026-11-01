@@ -228,6 +228,7 @@
   const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, dashboardController = null, reportController = null, dashboardLoaded = false, reportLoaded = false, tablePasteLocked = false, statusFilter = "";
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   function localDateString() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; }
+  $("date-from").value = localDateString(); $("date-to").value = localDateString();
   $("report-date-from").value = localDateString(); $("report-date-to").value = localDateString();
 
   function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
@@ -239,7 +240,7 @@
       $(`${name}-tab`).classList.toggle("active", name === view);
       $(`${name}-tab`).setAttribute("aria-selected", String(name === view));
     });
-    if (view === "dashboard" && !dashboardLoaded) loadDashboard(true);
+    if (view === "dashboard" && !dashboardLoaded) loadDashboard();
     if (view === "report" && !reportLoaded) loadReport();
   }
   function appendPivotCell(row, value, tag = "td") {
@@ -264,27 +265,25 @@
     appendPivotCell(totals, data.overall_total); foot.appendChild(totals);
     $("dashboard-count").textContent = `${data.record_count} records · ${data.rows.length} date(s)`;
   }
-  async function loadDashboard(setDefaultRange = false) {
+  async function loadDashboard() {
     const from = $("date-from").value, to = $("date-to").value;
+    if (dashboardController) dashboardController.abort();
+    dashboardController = null;
     if (from && to && from > to) {
       $("dashboard-message").textContent = "Date From must be on or before Date To.";
-      $("dashboard-message").classList.add("error-text"); return;
+      $("dashboard-message").classList.add("error-text"); $("dashboard-refresh").disabled = false; return;
     }
-    if (dashboardController) dashboardController.abort();
     const controller = dashboardController = new AbortController();
     const params = new URLSearchParams(); if (from) params.set("date_from", from); if (to) params.set("date_to", to);
     $("dashboard-message").textContent = "Loading Google Sheets data…";
     $("dashboard-message").classList.remove("error-text"); $("dashboard-refresh").disabled = true;
     try {
       const query = params.toString();
-      const response = await fetch(`/api/dashboard${query ? `?${query}` : ""}`, { signal: controller.signal });
+      const response = await fetch(`/api/dashboard${query ? `?${query}` : ""}`, { cache: "no-store", signal: controller.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load dashboard data.");
-      if (setDefaultRange && !$("date-from").value && !$("date-to").value && data.min_date && data.max_date) {
-        $("date-from").value = data.min_date; $("date-to").value = data.max_date;
-      }
       renderPivot(data); dashboardLoaded = true;
-      $("dashboard-message").textContent = "Dashboard updated from the Google Sheet.";
+      $("dashboard-message").textContent = `Dashboard updated for ${from || "earliest date"} to ${to || "latest date"}.`;
     } catch (error) {
       if (error.name === "AbortError") return;
       $("dashboard-message").textContent = error.message || "Could not load dashboard data.";
@@ -318,20 +317,21 @@
   }
   async function loadReport() {
     const from = $("report-date-from").value, to = $("report-date-to").value;
+    if (reportController) reportController.abort();
+    reportController = null;
     if (!from || !to) {
       $("report-message").textContent = "Select both Date From and Date To.";
-      $("report-message").classList.add("error-text"); return;
+      $("report-message").classList.add("error-text"); $("report-refresh").disabled = false; return;
     }
     if (from > to) {
       $("report-message").textContent = "Date From must be on or before Date To.";
-      $("report-message").classList.add("error-text"); return;
+      $("report-message").classList.add("error-text"); $("report-refresh").disabled = false; return;
     }
-    if (reportController) reportController.abort();
     const controller = reportController = new AbortController();
     $("report-message").textContent = "Loading Google Sheets data…";
     $("report-message").classList.remove("error-text"); $("report-refresh").disabled = true;
     try {
-      const response = await fetch(`/api/report?${reportQuery()}`, { signal: controller.signal });
+      const response = await fetch(`/api/report?${reportQuery()}`, { cache: "no-store", signal: controller.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load report data.");
       renderReport(data); reportLoaded = true;
@@ -352,7 +352,7 @@
     }
     const button = $("report-download"); button.disabled = true;
     try {
-      const response = await fetch(`/api/report/export?${reportQuery()}`);
+      const response = await fetch(`/api/report/export?${reportQuery()}`, { cache: "no-store" });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || "Could not export report.");
@@ -374,7 +374,7 @@
   $("dashboard-refresh").onclick = () => loadDashboard();
   $("report-refresh").onclick = () => loadReport();
   $("report-download").onclick = () => downloadReport();
-  ["date-from", "date-to"].forEach(id => $(id).addEventListener("change", () => loadDashboard()));
+  ["date-from", "date-to"].forEach(id => $(id).addEventListener("change", () => { dashboardLoaded = false; loadDashboard(); }));
   ["report-date-from", "report-date-to"].forEach(id => $(id).addEventListener("change", () => { reportLoaded = false; loadReport(); }));
   function gridValues() { return [...document.querySelectorAll('#guid-rows input[data-field="serviceguid"]')].map(i => i.value.trim()).filter(Boolean); }
   function updateCount() {

@@ -130,7 +130,8 @@ to update the worksheet.
 ### Failure dashboard
 
 Select **Dashboard** in the app to view failure counts by date. The Date From
-and Date To filters update the pivot table inclusively. Each distinct
+and Date To filters default to today and update the pivot table inclusively.
+Each distinct
 `Reson` value (after trimming surrounding spaces) gets its own column, with
 one row per distinct date, daily totals, and a grand-total row. Existing rows
 with an empty `Reson` value use `failure_reason` as a fallback. The dashboard
