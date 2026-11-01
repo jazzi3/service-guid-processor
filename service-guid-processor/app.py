@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+load_dotenv(os.path.join(BASE_DIR, ".env.local"), override=True)
 API_URL = os.getenv("API_URL", "").strip()
 API_USERNAME = os.getenv("API_USERNAME", "").strip()
 API_PASSWORD = os.getenv("API_PASSWORD", "").strip()
@@ -35,6 +36,7 @@ GOOGLE_SHEET_ID = os.getenv(
     "1H6rbt2woyWUFBRVlqGBSVI1mIJ4EaBZawSIksgmXJKE",
 ).strip()
 GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "Failed Orders").strip()
+LOCAL_DATA_CSV_PATH = os.getenv("LOCAL_DATA_CSV_PATH", "").strip()
 REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
 DELAY_SECONDS = 2
 GOOGLE_SHEETS_API_URL = "https://sheets.googleapis.com/v4"
@@ -47,7 +49,7 @@ WORKBOOK_COLUMNS = (
     "route_code",
     "document_date",
     "failure_reason",
-    "Reson",
+    "Reason",
     "Status",
     "Response",
 )
@@ -153,6 +155,7 @@ def _find_sheet_header(
 ) -> tuple[int, dict[str, int], bool]:
     if required_columns is None:
         optional_columns = {
+            _normalise_header("Reason"),
             _normalise_header("Reson"),
             _normalise_header("Response"),
         }
@@ -239,12 +242,15 @@ def _build_failure_pivot(
 
     date_column = headers[_normalise_header("Date")]
     reason_column = headers.get(
-        _normalise_header("Reson"),
-        headers.get(_normalise_header("failure_reason"), -1),
+        _normalise_header("Reason"),
+        headers.get(
+            _normalise_header("Reson"),
+            headers.get(_normalise_header("failure_reason"), -1),
+        ),
     )
     if reason_column < 0:
         raise WorkbookExportError(
-            'The worksheet must contain a "Reson" or "failure_reason" column.'
+            'The worksheet must contain a "Reason" or "failure_reason" column.'
         )
     failure_reason_column = headers.get(_normalise_header("failure_reason"), -1)
     counts_by_date: dict[date, dict[str, int]] = {}
@@ -269,7 +275,17 @@ def _build_failure_pivot(
                 if failure_reason_column < len(row)
                 else ""
             )
-        reason = _extract_failure_message(raw_reason).strip() or "(Blank)"
+        reason = _extract_failure_message(raw_reason).strip()
+        if failure_reason_column >= 0:
+            raw_failure_reason = (
+                row[failure_reason_column]
+                if failure_reason_column < len(row)
+                else ""
+            )
+            extracted_failure = _extract_failure_message(raw_failure_reason).strip()
+            if extracted_failure and extracted_failure in reason and extracted_failure != reason:
+                reason = extracted_failure
+        reason = reason or "(Blank)"
         date_counts = counts_by_date.setdefault(current_date, {})
         date_counts[reason] = date_counts.get(reason, 0) + 1
 
@@ -301,6 +317,19 @@ def _build_failure_pivot(
 
 
 def _read_google_sheet_values(action: str) -> list[list[Any]]:
+    if LOCAL_DATA_CSV_PATH:
+        if not os.path.isfile(LOCAL_DATA_CSV_PATH):
+            raise WorkbookExportError(
+                f"Local CSV data file does not exist: {LOCAL_DATA_CSV_PATH}"
+            )
+        try:
+            with open(LOCAL_DATA_CSV_PATH, encoding="utf-8-sig", newline="") as csv_file:
+                return list(csv.reader(csv_file))
+        except (OSError, UnicodeError, csv.Error) as exc:
+            raise WorkbookExportError(
+                f"Could not {action} from the configured local CSV: {exc}"
+            ) from exc
+
     spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
     spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
     escaped_sheet_name = GOOGLE_SHEET_NAME.replace("'", "''")
@@ -349,6 +378,11 @@ def _build_sheet_report(
         return list(WORKBOOK_COLUMNS), []
 
     date_column = headers[_normalise_header("Date")]
+    reason_column = headers.get(
+        _normalise_header("Reason"),
+        headers.get(_normalise_header("Reson"), -1),
+    )
+    failure_reason_column = headers.get(_normalise_header("failure_reason"), -1)
     source_headers = values[header_row]
     column_count = max(
         len(source_headers),
@@ -360,6 +394,9 @@ def _build_sheet_report(
         else f"Column {index + 1}"
         for index in range(column_count)
     ]
+    for column_index, header in enumerate(report_headers):
+        if _normalise_header(header) == _normalise_header("Reson"):
+            report_headers[column_index] = "Reason"
     report_rows: list[list[Any]] = []
     for row_index in range(header_row + 1, len(values)):
         row = values[row_index]
@@ -378,6 +415,13 @@ def _build_sheet_report(
             for index in range(column_count)
         ]
         report_row[date_column] = current_date.isoformat()
+        if reason_column >= 0 and failure_reason_column >= 0:
+            reason = _extract_failure_message(report_row[reason_column]).strip()
+            failure_reason = _extract_failure_message(
+                report_row[failure_reason_column]
+            ).strip()
+            if failure_reason and failure_reason in reason and failure_reason != reason:
+                report_row[reason_column] = failure_reason
         report_rows.append(report_row)
     return report_headers, report_rows
 
@@ -402,10 +446,134 @@ def _load_filtered_report(
     return start_date, end_date, headers, rows
 
 
+def _append_results_to_csv(
+    csv_path: str,
+    records: dict[str, dict[str, str]],
+    results: list[dict[str, Any]],
+) -> tuple[int, int]:
+    if not os.path.isfile(csv_path):
+        raise WorkbookExportError(f"Local CSV data file does not exist: {csv_path}")
+
+    with _workbook_write_lock:
+        try:
+            with open(csv_path, encoding="utf-8-sig", newline="") as csv_file:
+                rows = list(csv.reader(csv_file))
+        except (OSError, UnicodeError, csv.Error) as exc:
+            raise WorkbookExportError(f"Could not read local CSV data: {exc}") from exc
+
+        header_row, headers, headers_created = _find_sheet_header(rows)
+        if headers_created:
+            rows = [list(WORKBOOK_COLUMNS)]
+            header_row = 0
+            headers = {
+                _normalise_header(name): index
+                for index, name in enumerate(WORKBOOK_COLUMNS)
+            }
+
+        reason_key = _normalise_header("Reason")
+        legacy_reason_key = _normalise_header("Reson")
+        if reason_key not in headers:
+            if legacy_reason_key in headers:
+                reason_column = headers[legacy_reason_key]
+                rows[header_row][reason_column] = "Reason"
+                headers[reason_key] = reason_column
+            else:
+                reason_column = max(headers.values(), default=-1) + 1
+                headers[reason_key] = reason_column
+                if len(rows[header_row]) <= reason_column:
+                    rows[header_row] += [""] * (reason_column + 1 - len(rows[header_row]))
+                rows[header_row][reason_column] = "Reason"
+
+        response_key = _normalise_header("Response")
+        if response_key not in headers:
+            response_column = max(headers.values(), default=-1) + 1
+            headers[response_key] = response_column
+            if len(rows[header_row]) <= response_column:
+                rows[header_row] += [""] * (response_column + 1 - len(rows[header_row]))
+            rows[header_row][response_column] = "Response"
+
+        column_count = max(headers.values(), default=-1) + 1
+        rows[header_row] += [""] * (column_count - len(rows[header_row]))
+        for row in rows[header_row + 1 :]:
+            row += [""] * (column_count - len(row))
+
+        guid_column = headers[_normalise_header("serviceguid")]
+        existing_rows: dict[str, int] = {}
+        for row_index in range(header_row + 1, len(rows)):
+            guid = rows[row_index][guid_column].strip()
+            if guid:
+                existing_rows.setdefault(guid.casefold(), row_index)
+
+        new_rows: list[tuple[dict[str, str], dict[str, Any]]] = []
+        seen_guids: set[str] = set()
+        updated = 0
+        for result in results:
+            guid = str(result.get("serviceGUID", "")).strip()
+            normalized_guid = guid.casefold()
+            if not normalized_guid or normalized_guid in seen_guids:
+                continue
+            seen_guids.add(normalized_guid)
+            existing_row = existing_rows.get(normalized_guid)
+            if existing_row is not None:
+                rows[existing_row][headers[_normalise_header("Status")]] = (
+                    "Successfully" if result.get("Status") == "Success" else "Failed"
+                )
+                rows[existing_row][headers[response_key]] = str(
+                    result.get("Response", "") or ""
+                )
+                updated += 1
+            else:
+                new_rows.append((records.get(normalized_guid, {}), result))
+
+        for metadata, result in new_rows:
+            row = [""] * column_count
+            output_values = {
+                _normalise_header("Date"): metadata.get("date", ""),
+                _normalise_header("serviceguid"): result.get("serviceGUID", ""),
+                _normalise_header("document_number"): metadata.get("document_number", ""),
+                _normalise_header("tenant_code"): metadata.get("tenant_code", ""),
+                _normalise_header("route_code"): metadata.get("route_code", ""),
+                _normalise_header("document_date"): metadata.get("document_date", ""),
+                _normalise_header("failure_reason"): metadata.get("failure_reason", ""),
+                reason_key: _extract_failure_message(metadata.get("failure_reason", "")),
+                _normalise_header("Status"): (
+                    "Successfully" if result.get("Status") == "Success" else "Failed"
+                ),
+                response_key: result.get("Response", ""),
+            }
+            for normalized_header, value in output_values.items():
+                row[headers[normalized_header]] = "" if value is None else str(value)
+            rows.append(row)
+
+        temporary_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="",
+                dir=os.path.dirname(os.path.abspath(csv_path)),
+                delete=False,
+            ) as csv_file:
+                temporary_path = csv_file.name
+                csv.writer(csv_file).writerows(rows)
+                csv_file.flush()
+                os.fsync(csv_file.fileno())
+            os.replace(temporary_path, csv_path)
+        except OSError as exc:
+            if temporary_path and os.path.exists(temporary_path):
+                os.remove(temporary_path)
+            raise WorkbookExportError(f"Could not save local CSV data: {exc}") from exc
+
+        return len(new_rows), updated
+
+
 def append_results_to_google_sheet(
     records: dict[str, dict[str, str]],
     results: list[dict[str, Any]],
 ) -> tuple[int, int]:
+    if LOCAL_DATA_CSV_PATH:
+        return _append_results_to_csv(LOCAL_DATA_CSV_PATH, records, results)
+
     token = _google_sheets_access_token()
     spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
     spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
@@ -453,6 +621,8 @@ def append_results_to_google_sheet(
         values = sheet_data.get("values", [])
         header_row, headers, headers_created = _find_sheet_header(values)
         response_key = _normalise_header("Response")
+        reason_key = _normalise_header("Reason")
+        legacy_reason_key = _normalise_header("Reson")
         requests_to_apply: list[dict[str, Any]] = []
         if headers_created:
             requests_to_apply.append(
@@ -470,7 +640,42 @@ def append_results_to_google_sheet(
                     }
                 }
             )
-        for optional_header in ("Reson", "Response"):
+        if reason_key not in headers:
+            if legacy_reason_key in headers:
+                reason_column = headers[legacy_reason_key]
+                headers[reason_key] = reason_column
+                requests_to_apply.append(
+                    {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": header_row,
+                                "startColumnIndex": reason_column,
+                            },
+                            "rows": [{"values": [_sheet_cell("Reason")]}],
+                            "fields": "userEnteredValue",
+                        }
+                    }
+                )
+            else:
+                reason_column = max(headers.values(), default=-1) + 1
+                headers[reason_key] = reason_column
+                if not headers_created:
+                    requests_to_apply.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": header_row,
+                                    "startColumnIndex": reason_column,
+                                },
+                                "rows": [{"values": [_sheet_cell("Reason")]}],
+                                "fields": "userEnteredValue",
+                            }
+                        }
+                    )
+
+        for optional_header in ("Response",):
             normalized_header = _normalise_header(optional_header)
             if normalized_header not in headers:
                 column_index = max(headers.values(), default=-1) + 1
@@ -546,7 +751,7 @@ def append_results_to_google_sheet(
                 _normalise_header("route_code"): metadata.get("route_code", ""),
                 _normalise_header("document_date"): metadata.get("document_date", ""),
                 _normalise_header("failure_reason"): metadata.get("failure_reason", ""),
-                _normalise_header("Reson"): _extract_failure_message(
+                reason_key: _extract_failure_message(
                     metadata.get("failure_reason", "")
                 ),
                 _normalise_header("Status"): (
@@ -651,10 +856,21 @@ def _extract_failure_message(value: Any) -> str:
     try:
         data = json.loads(text)
     except ValueError:
-        return text
+        decoder = json.JSONDecoder()
+        data = None
+        for offset, character in enumerate(text):
+            if character != "{":
+                continue
+            try:
+                data, _ = decoder.raw_decode(text[offset:])
+                break
+            except ValueError:
+                continue
     if isinstance(data, dict):
-        message = data.get("message")
-        return "" if message in (None, "") else str(message)
+        for key in ("message", "error"):
+            message = data.get(key)
+            if message not in (None, ""):
+                return str(message)
     if isinstance(data, str):
         return data
     return text

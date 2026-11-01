@@ -104,21 +104,27 @@ local `.env` file):
 - `GOOGLE_SHEET_ID`: spreadsheet ID
 - `GOOGLE_SHEET_NAME`: worksheet tab name (defaults to `Failed Orders`)
 
-Never commit `.env` or put service-account credentials in frontend code. The
-sheet must have a header row containing
+Never commit `.env`, `.env.local`, or put service-account credentials in
+frontend code. The sheet must have a header row containing
 `Date`, `serviceguid`, `document_number`,
-`tenant_code`, `route_code`, `document_date`, `failure_reason`, `Reson`,
+`tenant_code`, `route_code`, `document_date`, `failure_reason`, `Reason`,
 `Status`, and `Response`. If the sheet is completely blank, the exporter
 creates this header row before saving the first batch. It adds missing
-`Reson` and `Response` headers to an otherwise recognized sheet. It does not
+`Reason` and `Response` headers to an otherwise recognized sheet. Existing
+`Reson` headers are renamed to `Reason` on the next save. It does not
 add headers to a non-empty sheet with an unrecognized layout. Each completed
 job appends new GUIDs and stores the API response.
 When a processed GUID already exists, its Status and Response are refreshed
 in place while the other existing cells are preserved. New records and
 existing-row updates are sent together in a single Sheets batch update. The job
 status reports export errors so failed saves are visible.
-For new rows, `failure_reason` is kept as supplied and `Reson` is populated
+For new rows, `failure_reason` is kept as supplied and `Reason` is populated
 from its JSON `message` field when present (or from the original text otherwise).
+
+For local CSV testing, set `LOCAL_DATA_CSV_PATH` in the ignored `.env.local`
+file. The local CSV is used for dashboard/report reads and processing-result
+saves. Do not set this variable in Render; without it, the app uses the
+configured Google Sheet.
 
 Anyone-with-link editor access lets anyone with the link change the spreadsheet.
 Restrict sharing to intended users and the service account if the data should
@@ -132,15 +138,15 @@ to update the worksheet.
 Select **Dashboard** in the app to view failure counts by date. The Date From
 and Date To filters default to today and update the pivot table inclusively.
 Each distinct
-`Reson` value (after trimming surrounding spaces) gets its own column, with
+`Reason` value (after trimming surrounding spaces) gets its own column, with
 one row per distinct date, daily totals, and a grand-total row. Existing rows
-with an empty `Reson` value use `failure_reason` as a fallback. The dashboard
-reads from the configured Google Sheets tab and refreshes after a processing
-batch is saved.
+with an empty `Reason` value use `failure_reason` as a fallback. The dashboard
+reads from the configured data source (Google Sheets by default, or the local
+CSV when configured) and refreshes after a processing batch is saved.
 
 ### Report
 
-Select **Report** to see all sheet columns and rows for a date range. Both
-filters default to the current local date, and changing either filter reloads
-the report. **Download Excel** exports the selected range as an `.xlsx`
-workbook.
+Select **Report** to see all configured data-source columns and rows for a
+date range. Both filters default to the current local date, and changing either
+filter reloads the report. **Download Excel** exports the selected range as an
+`.xlsx` workbook.
