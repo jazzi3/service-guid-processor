@@ -137,6 +137,7 @@ to update the worksheet.
 
 Select **Dashboard** in the app to view failure counts by date. The Date From
 and Date To filters default to today and update the pivot table inclusively.
+The table displays a loading indicator while data is being retrieved.
 Each distinct
 `Reason` value (after trimming surrounding spaces) gets its own column, with
 one row per distinct date, daily totals, and a grand-total row. Existing rows
@@ -147,6 +148,7 @@ CSV when configured) and refreshes after a processing batch is saved.
 ### Report
 
 Select **Report** to see all configured data-source columns and rows for a
-date range. Both filters default to the current local date, and changing either
-filter reloads the report. **Download Excel** exports the selected range as an
-`.xlsx` workbook.
+date range. Columns are constrained to the table width, with long values
+wrapping as needed. Both filters default to the current local date, and
+changing either filter reloads the report with a loading indicator.
+**Download Excel** exports the selected range as an `.xlsx` workbook.

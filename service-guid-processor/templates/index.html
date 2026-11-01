@@ -91,9 +91,14 @@
   .pivot-grid tfoot td:first-child { background:var(--primary-soft); z-index:2; }
   .pivot-grid .empty-pivot { text-align:center; color:var(--muted); padding:28px; }
   .report-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
-  .report-grid table { width:max-content; min-width:100%; table-layout:auto; }
-  .report-grid th, .report-grid td { min-width:120px; max-width:420px; white-space:pre-wrap; overflow-wrap:anywhere; vertical-align:top; }
+  .report-grid table { width:100%; min-width:960px; table-layout:fixed; }
+  .report-grid th, .report-grid td { min-width:0; max-width:none; padding:5px 7px; white-space:pre-wrap; overflow-wrap:anywhere; vertical-align:top; }
   .report-grid .empty-report { text-align:center; color:var(--muted); padding:28px; }
+  .table-state { text-align:center; color:var(--muted); padding:24px !important; }
+  .table-state.error-text { color:var(--bad); }
+  .table-loading { white-space:nowrap; }
+  .loading-indicator { display:inline-block; width:15px; height:15px; margin-right:9px; vertical-align:-3px; border:2px solid var(--line); border-top-color:var(--primary); border-radius:50%; animation:table-spin .75s linear infinite; }
+  @keyframes table-spin { to { transform:rotate(360deg); } }
   #report-message { min-height:22px; margin:0 0 8px; color:var(--muted); }
   #report-message.error-text { color:var(--bad); }
 
@@ -246,9 +251,19 @@
   function appendPivotCell(row, value, tag = "td") {
     const cell = document.createElement(tag); cell.textContent = String(value); row.appendChild(cell); return cell;
   }
+  function setTableStatus(tableId, text, { loading = false, error = false } = {}) {
+    const table = $(tableId), body = table.tBodies[0], row = document.createElement("tr");
+    const cell = appendPivotCell(row, text);
+    cell.colSpan = Math.max(table.tHead.rows[0]?.cells.length || 1, 1);
+    cell.className = `table-state${loading ? " table-loading" : ""}${error ? " error-text" : ""}`;
+    if (loading) cell.innerHTML = `<span class="loading-indicator" aria-hidden="true"></span>${escapeHtml(text)}`;
+    body.replaceChildren(row);
+    table.setAttribute("aria-busy", String(loading));
+  }
   function renderPivot(data) {
     const head = $("pivot-table").tHead, body = $("pivot-table").tBodies[0], foot = $("pivot-table").tFoot;
     head.replaceChildren(); body.replaceChildren(); foot.replaceChildren();
+    $("pivot-table").setAttribute("aria-busy", "false");
     const header = document.createElement("tr"); appendPivotCell(header, "Date", "th");
     data.reasons.forEach(reason => appendPivotCell(header, reason, "th")); appendPivotCell(header, "Total", "th"); head.appendChild(header);
     data.rows.forEach(item => {
@@ -275,8 +290,10 @@
     }
     const controller = dashboardController = new AbortController();
     const params = new URLSearchParams(); if (from) params.set("date_from", from); if (to) params.set("date_to", to);
-    $("dashboard-message").textContent = "Loading Google Sheets data…";
+    $("dashboard-message").textContent = "Loading data…";
     $("dashboard-message").classList.remove("error-text"); $("dashboard-refresh").disabled = true;
+    $("dashboard-count").textContent = "Loading…";
+    setTableStatus("pivot-table", "Loading failure reasons…", { loading: true });
     try {
       const query = params.toString();
       const response = await fetch(`/api/dashboard${query ? `?${query}` : ""}`, { cache: "no-store", signal: controller.signal });
@@ -286,6 +303,7 @@
       $("dashboard-message").textContent = `Dashboard updated for ${from || "earliest date"} to ${to || "latest date"}.`;
     } catch (error) {
       if (error.name === "AbortError") return;
+      setTableStatus("pivot-table", error.message || "Could not load dashboard data.", { error: true });
       $("dashboard-message").textContent = error.message || "Could not load dashboard data.";
       $("dashboard-message").classList.add("error-text");
     } finally {
@@ -295,6 +313,7 @@
   function renderReport(data) {
     const head = $("report-table").tHead, body = $("report-table").tBodies[0];
     head.replaceChildren(); body.replaceChildren();
+    $("report-table").setAttribute("aria-busy", "false");
     const header = document.createElement("tr");
     data.headers.forEach(value => appendPivotCell(header, value, "th"));
     head.appendChild(header);
@@ -328,8 +347,10 @@
       $("report-message").classList.add("error-text"); $("report-refresh").disabled = false; return;
     }
     const controller = reportController = new AbortController();
-    $("report-message").textContent = "Loading Google Sheets data…";
+    $("report-message").textContent = "Loading data…";
     $("report-message").classList.remove("error-text"); $("report-refresh").disabled = true;
+    $("report-count").textContent = "Loading…";
+    setTableStatus("report-table", "Loading processing report…", { loading: true });
     try {
       const response = await fetch(`/api/report?${reportQuery()}`, { cache: "no-store", signal: controller.signal });
       const data = await response.json();
@@ -338,6 +359,7 @@
       $("report-message").textContent = `Report updated for ${data.date_from} to ${data.date_to}.`;
     } catch (error) {
       if (error.name === "AbortError") return;
+      setTableStatus("report-table", error.message || "Could not load report data.", { error: true });
       $("report-message").textContent = error.message || "Could not load report data.";
       $("report-message").classList.add("error-text");
     } finally {
