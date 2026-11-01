@@ -106,15 +106,18 @@ local `.env` file):
 Never commit `.env` or put service-account credentials in frontend code. The
 sheet must have a header row containing
 `Date`, `serviceguid`, `document_number`,
-`tenant_code`, `route_code`, `document_date`, `failure_reason`, `Status`, and
-`Response`. If the sheet is completely blank, the exporter creates this header
-row before saving the first batch. It does not add headers to a non-empty sheet
-with an unrecognized layout. Each completed
+`tenant_code`, `route_code`, `document_date`, `failure_reason`, `Reson`,
+`Status`, and `Response`. If the sheet is completely blank, the exporter
+creates this header row before saving the first batch. It adds missing
+`Reson` and `Response` headers to an otherwise recognized sheet. It does not
+add headers to a non-empty sheet with an unrecognized layout. Each completed
 job appends new GUIDs and stores the API response.
 When a processed GUID already exists, its Status and Response are refreshed
 in place while the other existing cells are preserved. New records and
 existing-row updates are sent together in a single Sheets batch update. The job
 status reports export errors so failed saves are visible.
+For new rows, `failure_reason` is kept as supplied and `Reson` is populated
+from its JSON `message` field when present (or from the original text otherwise).
 
 Anyone-with-link editor access lets anyone with the link change the spreadsheet.
 Restrict sharing to intended users and the service account if the data should
@@ -127,6 +130,8 @@ to update the worksheet.
 
 Select **Dashboard** in the app to view failure counts by date. The Date From
 and Date To filters update the pivot table inclusively. Each distinct
-`failure_reason` (after trimming surrounding spaces) gets its own column, with
-daily totals and a grand-total row. The dashboard reads from the configured
-Google Sheets tab and refreshes after a processing batch is saved.
+`Reson` value (after trimming surrounding spaces) gets its own column, with
+one row per distinct date, daily totals, and a grand-total row. Existing rows
+with an empty `Reson` value use `failure_reason` as a fallback. The dashboard
+reads from the configured Google Sheets tab and refreshes after a processing
+batch is saved.

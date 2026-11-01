@@ -45,6 +45,7 @@ WORKBOOK_COLUMNS = (
     "route_code",
     "document_date",
     "failure_reason",
+    "Reson",
     "Status",
     "Response",
 )
@@ -146,8 +147,18 @@ def _normalise_header(value: Any) -> str:
 
 def _find_sheet_header(
     values: list[list[Any]],
+    required_columns: tuple[str, ...] | None = None,
 ) -> tuple[int, dict[str, int], bool]:
-    required = {_normalise_header(name) for name in WORKBOOK_COLUMNS[:-1]}
+    if required_columns is None:
+        optional_columns = {
+            _normalise_header("Reson"),
+            _normalise_header("Response"),
+        }
+        required_columns = tuple(
+            name for name in WORKBOOK_COLUMNS
+            if _normalise_header(name) not in optional_columns
+        )
+    required = {_normalise_header(name) for name in required_columns}
     matches: list[tuple[int, dict[str, int]]] = []
     for row_index, row in enumerate(values):
         headers: dict[str, int] = {}
@@ -168,7 +179,7 @@ def _find_sheet_header(
                 _normalise_header(name): column_index
                 for column_index, name in enumerate(WORKBOOK_COLUMNS)
             }, True
-        expected = ", ".join(WORKBOOK_COLUMNS[:-1])
+        expected = ", ".join(required_columns)
         raise WorkbookExportError(
             f"Could not find a row with the required headers: {expected}. "
             "Headers were not created because the sheet already contains data."
@@ -212,7 +223,7 @@ def _build_failure_pivot(
     date_from: date | None,
     date_to: date | None,
 ) -> dict[str, Any]:
-    header_row, headers, headers_created = _find_sheet_header(values)
+    header_row, headers, headers_created = _find_sheet_header(values, ("Date",))
     if headers_created:
         return {
             "reasons": [],
@@ -225,7 +236,15 @@ def _build_failure_pivot(
         }
 
     date_column = headers[_normalise_header("Date")]
-    reason_column = headers[_normalise_header("failure_reason")]
+    reason_column = headers.get(
+        _normalise_header("Reson"),
+        headers.get(_normalise_header("failure_reason"), -1),
+    )
+    if reason_column < 0:
+        raise WorkbookExportError(
+            'The worksheet must contain a "Reson" or "failure_reason" column.'
+        )
+    failure_reason_column = headers.get(_normalise_header("failure_reason"), -1)
     counts_by_date: dict[date, dict[str, int]] = {}
     for row_index in range(header_row + 1, len(values)):
         row = values[row_index]
@@ -242,7 +261,13 @@ def _build_failure_pivot(
         if date_to and current_date > date_to:
             continue
         raw_reason = row[reason_column] if reason_column < len(row) else ""
-        reason = str(raw_reason or "").strip() or "(Blank)"
+        if raw_reason in (None, "") and failure_reason_column >= 0:
+            raw_reason = (
+                row[failure_reason_column]
+                if failure_reason_column < len(row)
+                else ""
+            )
+        reason = _extract_failure_message(raw_reason).strip() or "(Blank)"
         date_counts = counts_by_date.setdefault(current_date, {})
         date_counts[reason] = date_counts.get(reason, 0) + 1
 
@@ -341,24 +366,25 @@ def append_results_to_google_sheet(
                     }
                 }
             )
-        response_added = response_key not in headers
-        if response_added:
-            response_column = max(headers.values(), default=-1) + 1
-            headers[response_key] = response_column
-            if not headers_created:
-                requests_to_apply.append(
-                    {
-                        "updateCells": {
-                            "range": {
-                                "sheetId": sheet_id,
-                                "startRowIndex": header_row,
-                                "startColumnIndex": response_column,
-                            },
-                            "rows": [{"values": [_sheet_cell("Response")]}],
-                            "fields": "userEnteredValue",
+        for optional_header in ("Reson", "Response"):
+            normalized_header = _normalise_header(optional_header)
+            if normalized_header not in headers:
+                column_index = max(headers.values(), default=-1) + 1
+                headers[normalized_header] = column_index
+                if not headers_created:
+                    requests_to_apply.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": header_row,
+                                    "startColumnIndex": column_index,
+                                },
+                                "rows": [{"values": [_sheet_cell(optional_header)]}],
+                                "fields": "userEnteredValue",
+                            }
                         }
-                    }
-                )
+                    )
 
         guid_column = headers[_normalise_header("serviceguid")]
         existing_rows: dict[str, int] = {}
@@ -416,6 +442,9 @@ def append_results_to_google_sheet(
                 _normalise_header("route_code"): metadata.get("route_code", ""),
                 _normalise_header("document_date"): metadata.get("document_date", ""),
                 _normalise_header("failure_reason"): metadata.get("failure_reason", ""),
+                _normalise_header("Reson"): _extract_failure_message(
+                    metadata.get("failure_reason", "")
+                ),
                 _normalise_header("Status"): (
                     "Successfully" if result.get("Status") == "Success" else "Failed"
                 ),
@@ -511,6 +540,20 @@ def clean_response(response: str) -> str:
             if value not in (None, ""):
                 return str(value)
     return str(data)[:500]
+
+
+def _extract_failure_message(value: Any) -> str:
+    text = "" if value is None else str(value)
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(data, dict):
+        message = data.get("message")
+        return "" if message in (None, "") else str(message)
+    if isinstance(data, str):
+        return data
+    return text
 
 
 def parse_guids(text: str) -> list[str]:
