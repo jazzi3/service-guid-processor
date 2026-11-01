@@ -7,7 +7,7 @@ import re
 import tempfile
 import threading
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -30,7 +30,7 @@ API_PASSWORD = os.getenv("API_PASSWORD", "").strip()
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
 GOOGLE_SHEET_ID = os.getenv(
     "GOOGLE_SHEET_ID",
-    "18IowWJwC-_fUnJnAqPjKmHXRBQKbWQjU",
+    "1H6rbt2woyWUFBRVlqGBSVI1mIJ4EaBZawSIksgmXJKE",
 ).strip()
 GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "Failed Orders").strip()
 REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
@@ -183,6 +183,94 @@ def _find_sheet_header(
 
 def _sheet_cell(value: Any) -> dict[str, dict[str, str]]:
     return {"userEnteredValue": {"stringValue": "" if value is None else str(value)}}
+
+
+def _parse_sheet_date(value: Any, row_number: int) -> date:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return date(1899, 12, 30) + timedelta(days=int(value))
+        except (OverflowError, ValueError) as exc:
+            raise WorkbookExportError(
+                f"Invalid date serial in Google Sheet row {row_number}."
+            ) from exc
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError as exc:
+            raise WorkbookExportError(
+                f"Invalid Date in Google Sheet row {row_number}: {text!r}. "
+                "Use an ISO date (YYYY-MM-DD) or a date-formatted cell."
+            ) from exc
+    raise WorkbookExportError(
+        f"Missing or invalid Date in Google Sheet row {row_number}."
+    )
+
+
+def _build_failure_pivot(
+    values: list[list[Any]],
+    date_from: date | None,
+    date_to: date | None,
+) -> dict[str, Any]:
+    header_row, headers, headers_created = _find_sheet_header(values)
+    if headers_created:
+        return {
+            "reasons": [],
+            "rows": [],
+            "grand_totals": {},
+            "overall_total": 0,
+            "record_count": 0,
+            "min_date": "",
+            "max_date": "",
+        }
+
+    date_column = headers[_normalise_header("Date")]
+    reason_column = headers[_normalise_header("failure_reason")]
+    counts_by_date: dict[date, dict[str, int]] = {}
+    for row_index in range(header_row + 1, len(values)):
+        row = values[row_index]
+        if not any(value not in (None, "") for value in row):
+            continue
+        raw_date = row[date_column] if date_column < len(row) else ""
+        if raw_date in (None, ""):
+            raise WorkbookExportError(
+                f"Missing Date in Google Sheet row {row_index + 1}."
+            )
+        current_date = _parse_sheet_date(raw_date, row_index + 1)
+        if date_from and current_date < date_from:
+            continue
+        if date_to and current_date > date_to:
+            continue
+        raw_reason = row[reason_column] if reason_column < len(row) else ""
+        reason = str(raw_reason or "").strip() or "(Blank)"
+        date_counts = counts_by_date.setdefault(current_date, {})
+        date_counts[reason] = date_counts.get(reason, 0) + 1
+
+    reasons = sorted(
+        {reason for daily_counts in counts_by_date.values() for reason in daily_counts},
+        key=lambda reason: (reason.casefold(), reason),
+    )
+    grand_totals = {
+        reason: sum(daily_counts.get(reason, 0) for daily_counts in counts_by_date.values())
+        for reason in reasons
+    }
+    rows = [
+        {
+            "date": current_date.isoformat(),
+            "counts": daily_counts,
+            "total": sum(daily_counts.values()),
+        }
+        for current_date, daily_counts in sorted(counts_by_date.items())
+    ]
+    return {
+        "reasons": reasons,
+        "rows": rows,
+        "grand_totals": grand_totals,
+        "overall_total": sum(grand_totals.values()),
+        "record_count": sum(row["total"] for row in rows),
+        "min_date": rows[0]["date"] if rows else "",
+        "max_date": rows[-1]["date"] if rows else "",
+    }
 
 
 def append_results_to_google_sheet(
@@ -618,6 +706,55 @@ async def index() -> FileResponse:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/dashboard")
+def failure_dashboard(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=400, detail="Date From must be on or before Date To.")
+
+    spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
+    spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
+    escaped_sheet_name = GOOGLE_SHEET_NAME.replace("'", "''")
+    values_range = quote(f"'{escaped_sheet_name}'!A:AZ", safe="!:$'")
+    try:
+        token = _google_sheets_access_token()
+        spreadsheet = _google_sheets_request(
+            "GET",
+            spreadsheet_url,
+            token,
+            "read spreadsheet metadata",
+            params={"fields": "sheets(properties(title))"},
+        ).json()
+        if not any(
+            item.get("properties", {}).get("title") == GOOGLE_SHEET_NAME
+            for item in spreadsheet.get("sheets", [])
+        ):
+            raise WorkbookExportError(
+                f'The spreadsheet does not contain a tab named "{GOOGLE_SHEET_NAME}".'
+            )
+        sheet_data = _google_sheets_request(
+            "GET",
+            f"{spreadsheet_url}/values/{values_range}",
+            token,
+            "read dashboard data",
+            params={
+                "valueRenderOption": "UNFORMATTED_VALUE",
+                "dateTimeRenderOption": "SERIAL_NUMBER",
+            },
+        ).json()
+    except ValueError as exc:
+        raise WorkbookExportError("Google Sheets returned invalid dashboard data.") from exc
+    except WorkbookExportError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    try:
+        return _build_failure_pivot(sheet_data.get("values", []), date_from, date_to)
+    except WorkbookExportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/jobs")

@@ -11,7 +11,8 @@ It supports:
 - Stops and highlights the token when the first GUID returns an upstream failure other than a network error, or when the API explicitly reports an authentication failure
 - Marks the token field with a red Expired indicator when an authentication error is confirmed
 - Live progress, cancellation, retry of failed IDs, and CSV result download
-- Automatic Google Drive Excel save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
+- Automatic Google Sheets save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
+- Failure dashboard with inclusive Date From/Date To filters and a dynamic pivot table of trimmed failure reasons, daily totals, and grand totals
 
 ## Run on localhost (Windows)
 
@@ -121,3 +122,11 @@ not be publicly editable.
 
 The app uses the [Google Sheets API](https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/batchUpdate)
 to update the worksheet.
+
+### Failure dashboard
+
+Select **Dashboard** in the app to view failure counts by date. The Date From
+and Date To filters update the pivot table inclusively. Each distinct
+`failure_reason` (after trimming surrounding spaces) gets its own column, with
+daily totals and a grand-total row. The dashboard reads from the configured
+Google Sheets tab and refreshes after a processing batch is saved.

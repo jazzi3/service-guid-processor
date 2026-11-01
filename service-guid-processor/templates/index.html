@@ -46,6 +46,9 @@
   .panel button.primary:hover:not(:disabled) { background:linear-gradient(135deg,var(--primary-h),var(--primary)); color:#fff; transform:translateY(-1px); box-shadow:0 8px 18px #4361ee44; }
 
   .panel { position:relative; margin:-48px 0 28px; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:18px; box-shadow:0 16px 48px #0b102026; }
+  .view-tabs { display:flex; gap:8px; padding-bottom:14px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+  .view-tabs button { border-color:transparent; background:var(--soft); color:var(--muted); }
+  .view-tabs button.active { background:var(--primary-soft); color:var(--primary); border-color:var(--primary); }
   .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px; }
   .toolbar .left { display:flex; align-items:baseline; gap:10px; margin-right:auto; }
   .search { width:260px; padding-left:36px; border-color:transparent; background:var(--soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 11px center/16px no-repeat; }
@@ -71,6 +74,22 @@
   .progress { height:10px; background:var(--surface); border-radius:99px; overflow:hidden; border:1px solid var(--line); }
   .bar { height:100%; width:0; background:linear-gradient(90deg,#4361ee,#22d3ee); border-radius:99px; transition:width .3s; }
   .now { display:flex; justify-content:space-between; gap:12px; margin-top:8px; flex-wrap:wrap; font-size:12px; } .current { font-family:ui-monospace, monospace; word-break:break-all; }
+  .dashboard-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .dashboard-heading p { margin:4px 0 0; color:var(--muted); }
+  .dashboard-filters { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin-bottom:16px; }
+  .dashboard-filters label { color:var(--muted); min-width:170px; margin:0; }
+  .dashboard-filters input { display:block; margin-top:5px; }
+  #dashboard-message { min-height:22px; margin:0 0 8px; color:var(--muted); }
+  #dashboard-message.error-text { color:var(--bad); }
+  .pivot-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
+  .pivot-grid table { min-width:max-content; }
+  .pivot-grid th, .pivot-grid td { text-align:right; white-space:nowrap; }
+  .pivot-grid th:first-child, .pivot-grid td:first-child { position:sticky; left:0; text-align:left; background:var(--surface); z-index:1; }
+  .pivot-grid thead th:first-child { background:var(--soft); z-index:2; }
+  .pivot-grid tfoot { font-weight:800; background:var(--primary-soft); }
+  .pivot-grid tfoot td { color:var(--text); background:var(--primary-soft); }
+  .pivot-grid tfoot td:first-child { background:var(--primary-soft); z-index:2; }
+  .pivot-grid .empty-pivot { text-align:center; color:var(--muted); padding:28px; }
 
   .grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 340px); min-height:280px; }
   table { border-collapse:collapse; width:100%; }
@@ -94,7 +113,7 @@
 
   .toast { position:fixed; right:22px; bottom:22px; z-index:10; background:#172033; color:#fff; padding:12px 16px; border-radius:12px; box-shadow:0 10px 30px #17203355; opacity:0; transform:translateY(12px); transition:.2s; pointer-events:none; max-width:340px; }
   .toast.show { opacity:1; transform:none; } .toast.success { background:#0f9d63; } .toast.warning { background:#b45309; } .toast.error { background:#d92d20; }
-  @media (max-width:700px) { .wrap { padding:0 12px; } .topbar { flex-direction:column; align-items:flex-start; } .search { width:100%; } .stats { margin-left:0; } .codes { grid-template-columns:repeat(3,1fr); width:100%; } }
+  @media (max-width:700px) { .wrap { padding:0 12px; } .topbar { flex-direction:column; align-items:flex-start; } .search { width:100%; } .stats { margin-left:0; } .codes { grid-template-columns:repeat(3,1fr); width:100%; } .dashboard-heading { flex-direction:column; } }
 </style>
 </head>
 <body>
@@ -126,6 +145,11 @@
   </div></div>
   <div class="wrap">
   <section class="panel">
+    <nav class="view-tabs" aria-label="Application views">
+      <button type="button" id="processor-tab" class="active" aria-selected="true">Processor</button>
+      <button type="button" id="dashboard-tab" aria-selected="false">Dashboard</button>
+    </nav>
+    <div id="processor-view">
     <div class="toolbar">
       <div class="left"><h2>Input data</h2><span id="input-count" class="muted small"></span></div>
       <input id="result-search" class="search" placeholder="Search any column or response">
@@ -152,18 +176,98 @@
     </div>
 
     <div class="grid"><table><thead><tr><th>Date</th><th>serviceguid</th><th>document_number</th><th>tenant_code</th><th>route_code</th><th>document_date</th><th>failure_reason</th><th>Status</th><th>Response</th></tr></thead><tbody id="guid-rows"></tbody></table><div id="empty" class="empty"><b>No data yet</b>Paste your rows into the first Date cell.</div></div>
+    </div>
+    <div id="dashboard-view" hidden>
+      <div class="dashboard-heading">
+        <div><h2>Failure reasons by date</h2><p>Count of each trimmed failure reason from the Google Sheet.</p></div>
+        <button type="button" id="dashboard-refresh">Refresh data</button>
+      </div>
+      <div class="dashboard-filters">
+        <label for="date-from">Date From<input type="date" id="date-from"></label>
+        <label for="date-to">Date To<input type="date" id="date-to"></label>
+        <span id="dashboard-count" class="muted small"></span>
+      </div>
+      <p id="dashboard-message" role="status" aria-live="polite"></p>
+      <div class="pivot-grid">
+        <table id="pivot-table">
+          <thead></thead><tbody></tbody><tfoot></tfoot>
+        </table>
+      </div>
+    </div>
   </section>
 </div>
 <div id="toast" class="toast"></div>
 
 <script>
   const DEMO_FALLBACK = true; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
-  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, tablePasteLocked = false, statusFilter = "";
+  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, dashboardController = null, dashboardLoaded = false, tablePasteLocked = false, statusFilter = "";
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
   function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
   function showToast(text, type = "success") { const t = $("toast"); t.textContent = text; t.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = "toast", 3500); }
   function escapeHtml(v) { return String(v).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[c])); }
+  function setActiveView(view) {
+    const dashboard = view === "dashboard";
+    $("processor-view").hidden = dashboard; $("dashboard-view").hidden = !dashboard;
+    $("processor-tab").classList.toggle("active", !dashboard); $("dashboard-tab").classList.toggle("active", dashboard);
+    $("processor-tab").setAttribute("aria-selected", String(!dashboard)); $("dashboard-tab").setAttribute("aria-selected", String(dashboard));
+    if (dashboard && !dashboardLoaded) loadDashboard(true);
+  }
+  function appendPivotCell(row, value, tag = "td") {
+    const cell = document.createElement(tag); cell.textContent = String(value); row.appendChild(cell); return cell;
+  }
+  function renderPivot(data) {
+    const head = $("pivot-table").tHead, body = $("pivot-table").tBodies[0], foot = $("pivot-table").tFoot;
+    head.replaceChildren(); body.replaceChildren(); foot.replaceChildren();
+    const header = document.createElement("tr"); appendPivotCell(header, "Date", "th");
+    data.reasons.forEach(reason => appendPivotCell(header, reason, "th")); appendPivotCell(header, "Total", "th"); head.appendChild(header);
+    data.rows.forEach(item => {
+      const row = document.createElement("tr"); appendPivotCell(row, item.date);
+      data.reasons.forEach(reason => appendPivotCell(row, item.counts[reason] || 0));
+      appendPivotCell(row, item.total); body.appendChild(row);
+    });
+    if (!data.rows.length) {
+      const row = document.createElement("tr"), cell = appendPivotCell(row, "No records for the selected date range.", "td");
+      cell.colSpan = data.reasons.length + 2; cell.className = "empty-pivot"; body.appendChild(row);
+    }
+    const totals = document.createElement("tr"); appendPivotCell(totals, "Grand Total");
+    data.reasons.forEach(reason => appendPivotCell(totals, data.grand_totals[reason] || 0));
+    appendPivotCell(totals, data.overall_total); foot.appendChild(totals);
+    $("dashboard-count").textContent = `${data.record_count} records · ${data.rows.length} date(s)`;
+  }
+  async function loadDashboard(setDefaultRange = false) {
+    const from = $("date-from").value, to = $("date-to").value;
+    if (from && to && from > to) {
+      $("dashboard-message").textContent = "Date From must be on or before Date To.";
+      $("dashboard-message").classList.add("error-text"); return;
+    }
+    if (dashboardController) dashboardController.abort();
+    const controller = dashboardController = new AbortController();
+    const params = new URLSearchParams(); if (from) params.set("date_from", from); if (to) params.set("date_to", to);
+    $("dashboard-message").textContent = "Loading Google Sheets data…";
+    $("dashboard-message").classList.remove("error-text"); $("dashboard-refresh").disabled = true;
+    try {
+      const query = params.toString();
+      const response = await fetch(`/api/dashboard${query ? `?${query}` : ""}`, { signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not load dashboard data.");
+      if (setDefaultRange && !$("date-from").value && !$("date-to").value && data.min_date && data.max_date) {
+        $("date-from").value = data.min_date; $("date-to").value = data.max_date;
+      }
+      renderPivot(data); dashboardLoaded = true;
+      $("dashboard-message").textContent = "Dashboard updated from the Google Sheet.";
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      $("dashboard-message").textContent = error.message || "Could not load dashboard data.";
+      $("dashboard-message").classList.add("error-text");
+    } finally {
+      if (dashboardController === controller) { dashboardController = null; $("dashboard-refresh").disabled = false; }
+    }
+  }
+  $("processor-tab").onclick = () => setActiveView("processor");
+  $("dashboard-tab").onclick = () => setActiveView("dashboard");
+  $("dashboard-refresh").onclick = () => loadDashboard();
+  ["date-from", "date-to"].forEach(id => $(id).addEventListener("change", () => loadDashboard()));
   function gridValues() { return [...document.querySelectorAll('#guid-rows input[data-field="serviceguid"]')].map(i => i.value.trim()).filter(Boolean); }
   function updateCount() {
     const n = new Set(gridValues()).size;
@@ -278,14 +382,18 @@
     if (done) {
       const completion = data.auth_expired ? data.status_message : data.state === "cancelled" ? "Job cancelled. Processed results are preserved." : `Complete: ${data.successful} successful, ${data.failed} failed.`;
       const workbookSummary = data.workbook_status === "saved"
-        ? ` Google Drive: appended ${data.workbook_added} record(s), updated ${data.workbook_updated} existing record(s).`
+        ? ` Google Sheets: appended ${data.workbook_added} record(s), updated ${data.workbook_updated} existing record(s).`
         : data.workbook_status === "error" ? ` Excel file was not updated: ${data.workbook_error}` : "";
       $("completion").textContent = completion + workbookSummary;
       const notificationType = data.auth_expired ? "error" : data.workbook_status === "error" ? "warning" : "success";
       const notification = data.workbook_status === "error" && !data.auth_expired
-        ? `Processing completed, but the Google Drive Excel save failed: ${data.workbook_error}`
+        ? `Processing completed, but the Google Sheets save failed: ${data.workbook_error}`
         : $("completion").textContent;
       $("start").disabled = false; showToast(notification, notificationType);
+      if (data.workbook_status === "saved") {
+        dashboardLoaded = false;
+        if (!$("dashboard-view").hidden) loadDashboard();
+      }
     }
   }
 
