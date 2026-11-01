@@ -90,6 +90,12 @@
   .pivot-grid tfoot td { color:var(--text); background:var(--primary-soft); }
   .pivot-grid tfoot td:first-child { background:var(--primary-soft); z-index:2; }
   .pivot-grid .empty-pivot { text-align:center; color:var(--muted); padding:28px; }
+  .report-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
+  .report-grid table { width:max-content; min-width:100%; table-layout:auto; }
+  .report-grid th, .report-grid td { min-width:120px; max-width:420px; white-space:pre-wrap; overflow-wrap:anywhere; vertical-align:top; }
+  .report-grid .empty-report { text-align:center; color:var(--muted); padding:28px; }
+  #report-message { min-height:22px; margin:0 0 8px; color:var(--muted); }
+  #report-message.error-text { color:var(--bad); }
 
   .grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 340px); min-height:280px; }
   table { border-collapse:collapse; width:100%; }
@@ -148,6 +154,7 @@
     <nav class="view-tabs" aria-label="Application views">
       <button type="button" id="processor-tab" class="active" aria-selected="true">Processor</button>
       <button type="button" id="dashboard-tab" aria-selected="false">Dashboard</button>
+      <button type="button" id="report-tab" aria-selected="false">Report</button>
     </nav>
     <div id="processor-view">
     <div class="toolbar">
@@ -194,24 +201,46 @@
         </table>
       </div>
     </div>
+    <div id="report-view" hidden>
+      <div class="dashboard-heading">
+        <div><h2>Processing report</h2><p>All spreadsheet rows for the selected date range.</p></div>
+        <div class="tools">
+          <button type="button" id="report-refresh">Refresh data</button>
+          <button type="button" id="report-download" class="primary">Download Excel</button>
+        </div>
+      </div>
+      <div class="dashboard-filters">
+        <label for="report-date-from">Date From<input type="date" id="report-date-from"></label>
+        <label for="report-date-to">Date To<input type="date" id="report-date-to"></label>
+        <span id="report-count" class="muted small"></span>
+      </div>
+      <p id="report-message" role="status" aria-live="polite"></p>
+      <div class="report-grid">
+        <table id="report-table"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
   </section>
 </div>
 <div id="toast" class="toast"></div>
 
 <script>
   const DEMO_FALLBACK = true; // preview only: simulates a job when /api/jobs does not exist. Set to false in production.
-  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, dashboardController = null, dashboardLoaded = false, tablePasteLocked = false, statusFilter = "";
+  const $ = id => document.getElementById(id); let jobId = null, socket = null, demo = null, toastTimer, dashboardController = null, reportController = null, dashboardLoaded = false, reportLoaded = false, tablePasteLocked = false, statusFilter = "";
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  function localDateString() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; }
+  $("report-date-from").value = localDateString(); $("report-date-to").value = localDateString();
 
   function showError(text) { $("message").textContent = text || ""; if (text) showToast(text, "error"); }
   function showToast(text, type = "success") { const t = $("toast"); t.textContent = text; t.className = `toast show ${type}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = "toast", 3500); }
   function escapeHtml(v) { return String(v).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[c])); }
   function setActiveView(view) {
-    const dashboard = view === "dashboard";
-    $("processor-view").hidden = dashboard; $("dashboard-view").hidden = !dashboard;
-    $("processor-tab").classList.toggle("active", !dashboard); $("dashboard-tab").classList.toggle("active", dashboard);
-    $("processor-tab").setAttribute("aria-selected", String(!dashboard)); $("dashboard-tab").setAttribute("aria-selected", String(dashboard));
-    if (dashboard && !dashboardLoaded) loadDashboard(true);
+    ["processor", "dashboard", "report"].forEach(name => {
+      $(`${name}-view`).hidden = name !== view;
+      $(`${name}-tab`).classList.toggle("active", name === view);
+      $(`${name}-tab`).setAttribute("aria-selected", String(name === view));
+    });
+    if (view === "dashboard" && !dashboardLoaded) loadDashboard(true);
+    if (view === "report" && !reportLoaded) loadReport();
   }
   function appendPivotCell(row, value, tag = "td") {
     const cell = document.createElement(tag); cell.textContent = String(value); row.appendChild(cell); return cell;
@@ -264,10 +293,89 @@
       if (dashboardController === controller) { dashboardController = null; $("dashboard-refresh").disabled = false; }
     }
   }
+  function renderReport(data) {
+    const head = $("report-table").tHead, body = $("report-table").tBodies[0];
+    head.replaceChildren(); body.replaceChildren();
+    const header = document.createElement("tr");
+    data.headers.forEach(value => appendPivotCell(header, value, "th"));
+    head.appendChild(header);
+    data.rows.forEach(values => {
+      const row = document.createElement("tr");
+      values.forEach(value => appendPivotCell(row, value ?? ""));
+      body.appendChild(row);
+    });
+    if (!data.rows.length) {
+      const row = document.createElement("tr"), cell = appendPivotCell(row, "No records for the selected date range.");
+      cell.colSpan = Math.max(data.headers.length, 1); cell.className = "empty-report"; body.appendChild(row);
+    }
+    $("report-count").textContent = `${data.record_count} record(s)`;
+  }
+  function reportQuery() {
+    const params = new URLSearchParams();
+    if ($("report-date-from").value) params.set("date_from", $("report-date-from").value);
+    if ($("report-date-to").value) params.set("date_to", $("report-date-to").value);
+    return params.toString();
+  }
+  async function loadReport() {
+    const from = $("report-date-from").value, to = $("report-date-to").value;
+    if (!from || !to) {
+      $("report-message").textContent = "Select both Date From and Date To.";
+      $("report-message").classList.add("error-text"); return;
+    }
+    if (from > to) {
+      $("report-message").textContent = "Date From must be on or before Date To.";
+      $("report-message").classList.add("error-text"); return;
+    }
+    if (reportController) reportController.abort();
+    const controller = reportController = new AbortController();
+    $("report-message").textContent = "Loading Google Sheets data…";
+    $("report-message").classList.remove("error-text"); $("report-refresh").disabled = true;
+    try {
+      const response = await fetch(`/api/report?${reportQuery()}`, { signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not load report data.");
+      renderReport(data); reportLoaded = true;
+      $("report-message").textContent = `Report updated for ${data.date_from} to ${data.date_to}.`;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      $("report-message").textContent = error.message || "Could not load report data.";
+      $("report-message").classList.add("error-text");
+    } finally {
+      if (reportController === controller) { reportController = null; $("report-refresh").disabled = false; }
+    }
+  }
+  async function downloadReport() {
+    const from = $("report-date-from").value, to = $("report-date-to").value;
+    if (!from || !to || from > to) {
+      $("report-message").textContent = "Select a valid Date From and Date To range before downloading.";
+      $("report-message").classList.add("error-text"); return;
+    }
+    const button = $("report-download"); button.disabled = true;
+    try {
+      const response = await fetch(`/api/report/export?${reportQuery()}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Could not export report.");
+      }
+      const blob = await response.blob(), url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `service-guid-report-${from}-to-${to}.xlsx`;
+      document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      $("report-message").textContent = "Excel report downloaded.";
+      $("report-message").classList.remove("error-text");
+    } catch (error) {
+      $("report-message").textContent = error.message || "Could not export report.";
+      $("report-message").classList.add("error-text");
+    } finally { button.disabled = false; }
+  }
   $("processor-tab").onclick = () => setActiveView("processor");
   $("dashboard-tab").onclick = () => setActiveView("dashboard");
+  $("report-tab").onclick = () => setActiveView("report");
   $("dashboard-refresh").onclick = () => loadDashboard();
+  $("report-refresh").onclick = () => loadReport();
+  $("report-download").onclick = () => downloadReport();
   ["date-from", "date-to"].forEach(id => $(id).addEventListener("change", () => loadDashboard()));
+  ["report-date-from", "report-date-to"].forEach(id => $(id).addEventListener("change", () => { reportLoaded = false; loadReport(); }));
   function gridValues() { return [...document.querySelectorAll('#guid-rows input[data-field="serviceguid"]')].map(i => i.value.trim()).filter(Boolean); }
   function updateCount() {
     const n = new Set(gridValues()).size;
@@ -392,7 +500,9 @@
       $("start").disabled = false; showToast(notification, notificationType);
       if (data.workbook_status === "saved") {
         dashboardLoaded = false;
+        reportLoaded = false;
         if (!$("dashboard-view").hidden) loadDashboard();
+        if (!$("report-view").hidden) loadReport();
       }
     }
   }

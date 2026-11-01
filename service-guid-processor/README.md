@@ -13,6 +13,7 @@ It supports:
 - Live progress, cancellation, retry of failed IDs, and CSV result download
 - Automatic Google Sheets save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
 - Failure dashboard with inclusive Date From/Date To filters and a dynamic pivot table of trimmed failure reasons, daily totals, and grand totals
+- Report view with date-filtered Google Sheets rows and an Excel workbook download
 
 ## Run on localhost (Windows)
 
@@ -135,3 +136,10 @@ one row per distinct date, daily totals, and a grand-total row. Existing rows
 with an empty `Reson` value use `failure_reason` as a fallback. The dashboard
 reads from the configured Google Sheets tab and refreshes after a processing
 batch is saved.
+
+### Report
+
+Select **Report** to see all sheet columns and rows for a date range. Both
+filters default to the current local date, and changing either filter reloads
+the report. **Download Excel** exports the selected range as an `.xlsx`
+workbook.

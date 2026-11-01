@@ -8,9 +8,11 @@ import tempfile
 import threading
 import uuid
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from typing import Any
 from urllib.parse import quote
 
+from openpyxl import Workbook
 import requests
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleAuthRequest
@@ -19,7 +21,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -296,6 +298,108 @@ def _build_failure_pivot(
         "min_date": rows[0]["date"] if rows else "",
         "max_date": rows[-1]["date"] if rows else "",
     }
+
+
+def _read_google_sheet_values(action: str) -> list[list[Any]]:
+    spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
+    spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
+    escaped_sheet_name = GOOGLE_SHEET_NAME.replace("'", "''")
+    values_range = quote(f"'{escaped_sheet_name}'!A:AZ", safe="!:$'")
+    try:
+        token = _google_sheets_access_token()
+        spreadsheet = _google_sheets_request(
+            "GET",
+            spreadsheet_url,
+            token,
+            "read spreadsheet metadata",
+            params={"fields": "sheets(properties(title))"},
+        ).json()
+        if not any(
+            item.get("properties", {}).get("title") == GOOGLE_SHEET_NAME
+            for item in spreadsheet.get("sheets", [])
+        ):
+            raise WorkbookExportError(
+                f'The spreadsheet does not contain a tab named "{GOOGLE_SHEET_NAME}".'
+            )
+        sheet_data = _google_sheets_request(
+            "GET",
+            f"{spreadsheet_url}/values/{values_range}",
+            token,
+            action,
+            params={
+                "valueRenderOption": "UNFORMATTED_VALUE",
+                "dateTimeRenderOption": "SERIAL_NUMBER",
+            },
+        ).json()
+    except ValueError as exc:
+        raise WorkbookExportError("Google Sheets returned invalid worksheet data.") from exc
+    return sheet_data.get("values", [])
+
+
+def _build_sheet_report(
+    values: list[list[Any]],
+    date_from: date,
+    date_to: date,
+) -> tuple[list[str], list[list[Any]]]:
+    header_row, headers, headers_created = _find_sheet_header(
+        values,
+        ("Date", "serviceguid"),
+    )
+    if headers_created:
+        return list(WORKBOOK_COLUMNS), []
+
+    date_column = headers[_normalise_header("Date")]
+    source_headers = values[header_row]
+    column_count = max(
+        len(source_headers),
+        max((len(row) for row in values[header_row + 1 :]), default=0),
+    )
+    report_headers = [
+        str(source_headers[index]).strip()
+        if index < len(source_headers) and str(source_headers[index]).strip()
+        else f"Column {index + 1}"
+        for index in range(column_count)
+    ]
+    report_rows: list[list[Any]] = []
+    for row_index in range(header_row + 1, len(values)):
+        row = values[row_index]
+        if not any(value not in (None, "") for value in row):
+            continue
+        raw_date = row[date_column] if date_column < len(row) else ""
+        if raw_date in (None, ""):
+            raise WorkbookExportError(
+                f"Missing Date in Google Sheet row {row_index + 1}."
+            )
+        current_date = _parse_sheet_date(raw_date, row_index + 1)
+        if current_date < date_from or current_date > date_to:
+            continue
+        report_row = [
+            row[index] if index < len(row) else ""
+            for index in range(column_count)
+        ]
+        report_row[date_column] = current_date.isoformat()
+        report_rows.append(report_row)
+    return report_headers, report_rows
+
+
+def _load_filtered_report(
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[date, date, list[str], list[list[Any]]]:
+    current_date = date.today()
+    start_date = date_from or current_date
+    end_date = date_to or current_date
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Date From must be on or before Date To.",
+        )
+    try:
+        values = _read_google_sheet_values("read report data")
+        headers, rows = _build_sheet_report(values, start_date, end_date)
+    except WorkbookExportError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return start_date, end_date, headers, rows
 
 
 def append_results_to_google_sheet(
@@ -759,45 +863,62 @@ def failure_dashboard(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=400, detail="Date From must be on or before Date To.")
 
-    spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
-    spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
-    escaped_sheet_name = GOOGLE_SHEET_NAME.replace("'", "''")
-    values_range = quote(f"'{escaped_sheet_name}'!A:AZ", safe="!:$'")
     try:
-        token = _google_sheets_access_token()
-        spreadsheet = _google_sheets_request(
-            "GET",
-            spreadsheet_url,
-            token,
-            "read spreadsheet metadata",
-            params={"fields": "sheets(properties(title))"},
-        ).json()
-        if not any(
-            item.get("properties", {}).get("title") == GOOGLE_SHEET_NAME
-            for item in spreadsheet.get("sheets", [])
-        ):
-            raise WorkbookExportError(
-                f'The spreadsheet does not contain a tab named "{GOOGLE_SHEET_NAME}".'
-            )
-        sheet_data = _google_sheets_request(
-            "GET",
-            f"{spreadsheet_url}/values/{values_range}",
-            token,
-            "read dashboard data",
-            params={
-                "valueRenderOption": "UNFORMATTED_VALUE",
-                "dateTimeRenderOption": "SERIAL_NUMBER",
-            },
-        ).json()
-    except ValueError as exc:
-        raise WorkbookExportError("Google Sheets returned invalid dashboard data.") from exc
+        values = _read_google_sheet_values("read dashboard data")
     except WorkbookExportError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     try:
-        return _build_failure_pivot(sheet_data.get("values", []), date_from, date_to)
+        return _build_failure_pivot(values, date_from, date_to)
     except WorkbookExportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/report")
+def sheet_report(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    start_date, end_date, headers, rows = _load_filtered_report(date_from, date_to)
+    return {
+        "headers": headers,
+        "rows": rows,
+        "record_count": len(rows),
+        "date_from": start_date.isoformat(),
+        "date_to": end_date.isoformat(),
+    }
+
+
+@app.get("/api/report/export")
+def export_sheet_report(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Response:
+    start_date, end_date, headers, rows = _load_filtered_report(date_from, date_to)
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Report"
+    worksheet.append(headers)
+    _, sheet_headers, _ = _find_sheet_header(
+        [headers],
+        ("Date", "serviceguid"),
+    )
+    date_column = sheet_headers[_normalise_header("Date")]
+    for row in rows:
+        output_row = list(row)
+        output_row[date_column] = date.fromisoformat(output_row[date_column])
+        worksheet.append(output_row)
+        worksheet.cell(worksheet.max_row, date_column + 1).number_format = "yyyy-mm-dd"
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    buffer = BytesIO()
+    workbook.save(buffer)
+    filename = f"service-guid-report-{start_date.isoformat()}-to-{end_date.isoformat()}.xlsx"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/api/jobs")
