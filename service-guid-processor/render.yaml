@@ -14,5 +14,7 @@ services:
         sync: false
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false
-      - key: GOOGLE_DRIVE_FILE_ID
-        value: 18IowWJwC-_fUnJnAqPjKmHXRBQKbWQjU
+      - key: GOOGLE_SHEET_ID
+        value: 1H6rbt2woyWUFBRVlqGBSVI1mIJ4EaBZawSIksgmXJKE
+      - key: GOOGLE_SHEET_NAME
+        value: Failed Orders

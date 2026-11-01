@@ -87,39 +87,37 @@ The deployed service uses the bearer token entered in the page. Render
 provides HTTPS automatically, and the app's WebSocket progress connection
 uses that secure connection automatically.
 
-### Configure automatic Google Drive workbook export
+### Configure automatic Google Sheets export
 
-The exporter updates the uploaded `.xlsx` file in Google Drive through the
-Google Drive API. Enable the Drive API in a Google Cloud project, create a
-service account, and grant its email address **Editor** access to the workbook.
-The public “Anyone with the link can edit” setting is not a substitute for API
-authentication. Keep the service-account JSON private.
+The exporter writes to the `Failed Orders` tab of the configured Google
+spreadsheet using the Google Sheets API. Enable the Google Sheets API in a
+Google Cloud project, create a service account, and grant its email address
+**Editor** access to the spreadsheet. Public link access is not a substitute
+for API authentication. Keep the service-account JSON private.
 
 Set these variables in the Render service's environment settings (or in the
 local `.env` file):
 
 - `GOOGLE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON credential
-- `GOOGLE_DRIVE_FILE_ID`: the Drive file ID (defaults to the provided `Failed_Orders.xlsx`)
+- `GOOGLE_SHEET_ID`: spreadsheet ID
+- `GOOGLE_SHEET_NAME`: worksheet tab name (defaults to `Failed Orders`)
 
 Never commit `.env` or put service-account credentials in frontend code. The
-file must be an uploaded `.xlsx` workbook; native Google Sheets files are not
-supported by this exporter. The workbook must have a header row containing
+sheet must have a header row containing
 `Date`, `serviceguid`, `document_number`,
 `tenant_code`, `route_code`, `document_date`, `failure_reason`, `Status`, and
-`Response`. If the workbook is completely blank, the exporter creates this
-header row on the active worksheet before saving the first batch. It does not
-add headers to a non-empty workbook with an unrecognized layout. Each completed
+`Response`. If the sheet is completely blank, the exporter creates this header
+row before saving the first batch. It does not add headers to a non-empty sheet
+with an unrecognized layout. Each completed
 job appends new GUIDs and stores the API response.
 When a processed GUID already exists, its Status and Response are refreshed
-in place while the other existing cells are preserved. Before uploading, the
-exporter uses the Drive ETag as a conditional write when available; otherwise
-it checks the file version again and rejects detected concurrent changes. The
-job status reports export errors so failed saves are visible.
+in place while the other existing cells are preserved. New records and
+existing-row updates are sent together in a single Sheets batch update. The job
+status reports export errors so failed saves are visible.
 
-Anyone-with-link editor access lets anyone with the link change the workbook.
+Anyone-with-link editor access lets anyone with the link change the spreadsheet.
 Restrict sharing to intended users and the service account if the data should
 not be publicly editable.
 
-The app uses the [Google Drive API file download](https://developers.google.com/drive/api/reference/rest/v3/files/get)
-and [file update](https://developers.google.com/drive/api/reference/rest/v3/files/update)
-endpoints.
+The app uses the [Google Sheets API](https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/batchUpdate)
+to update the worksheet.

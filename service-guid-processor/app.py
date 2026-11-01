@@ -7,21 +7,14 @@ import re
 import tempfile
 import threading
 import uuid
-from zipfile import BadZipFile
-from copy import copy
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
-from xml.etree.ElementTree import ParseError
 
 import requests
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.service_account import Credentials
-from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.utils.cell import range_boundaries
-from openpyxl.utils.exceptions import InvalidFileException
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
@@ -35,15 +28,15 @@ API_URL = os.getenv("API_URL", "").strip()
 API_USERNAME = os.getenv("API_USERNAME", "").strip()
 API_PASSWORD = os.getenv("API_PASSWORD", "").strip()
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-GOOGLE_DRIVE_FILE_ID = os.getenv(
-    "GOOGLE_DRIVE_FILE_ID",
+GOOGLE_SHEET_ID = os.getenv(
+    "GOOGLE_SHEET_ID",
     "18IowWJwC-_fUnJnAqPjKmHXRBQKbWQjU",
 ).strip()
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "Failed Orders").strip()
 REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
 DELAY_SECONDS = 2
-GOOGLE_DRIVE_API_URL = "https://www.googleapis.com/drive/v3"
-GOOGLE_DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3"
-GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+GOOGLE_SHEETS_API_URL = "https://sheets.googleapis.com/v4"
+GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 WORKBOOK_COLUMNS = (
     "Date",
     "serviceguid",
@@ -85,7 +78,7 @@ class WorkbookExportError(Exception):
     pass
 
 
-def _google_drive_error(response: requests.Response, action: str) -> WorkbookExportError:
+def _google_sheets_error(response: requests.Response, action: str) -> WorkbookExportError:
     try:
         body = response.json()
     except ValueError:
@@ -93,27 +86,28 @@ def _google_drive_error(response: requests.Response, action: str) -> WorkbookExp
     error = body.get("error") if isinstance(body, dict) else None
     message = error.get("message") if isinstance(error, dict) else None
     detail = f": {message}" if message else ""
-    return WorkbookExportError(f"Google Drive {action} failed (HTTP {response.status_code}){detail}")
+    return WorkbookExportError(f"Google Sheets {action} failed (HTTP {response.status_code}){detail}")
 
 
-def _google_drive_access_token() -> str:
+def _google_sheets_access_token() -> str:
     missing = [
         name
         for name, value in (
             ("GOOGLE_SERVICE_ACCOUNT_JSON", GOOGLE_SERVICE_ACCOUNT_JSON),
-            ("GOOGLE_DRIVE_FILE_ID", GOOGLE_DRIVE_FILE_ID),
+            ("GOOGLE_SHEET_ID", GOOGLE_SHEET_ID),
+            ("GOOGLE_SHEET_NAME", GOOGLE_SHEET_NAME),
         )
         if not value
     ]
     if missing:
         raise WorkbookExportError(
-            "Google Drive export is not configured. Set: " + ", ".join(missing)
+            "Google Sheets export is not configured. Set: " + ", ".join(missing)
         )
     try:
         service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
         credentials = Credentials.from_service_account_info(
             service_account_info,
-            scopes=[GOOGLE_DRIVE_SCOPE],
+            scopes=[GOOGLE_SHEETS_SCOPE],
         )
         credentials.refresh(GoogleAuthRequest())
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -121,13 +115,13 @@ def _google_drive_access_token() -> str:
             "GOOGLE_SERVICE_ACCOUNT_JSON must contain valid Google service-account credentials."
         ) from exc
     except (GoogleAuthError, requests.exceptions.RequestException) as exc:
-        raise WorkbookExportError(f"Google Drive authentication failed: {exc}") from exc
+        raise WorkbookExportError(f"Google Sheets authentication failed: {exc}") from exc
     if not credentials.token:
         raise WorkbookExportError("Google authentication returned no access token.")
     return credentials.token
 
 
-def _google_drive_request(
+def _google_sheets_request(
     method: str,
     url: str,
     token: str,
@@ -142,7 +136,7 @@ def _google_drive_request(
     except requests.exceptions.RequestException as exc:
         raise WorkbookExportError(f"Could not {action}: {exc}") from exc
     if not response.ok:
-        raise _google_drive_error(response, action)
+        raise _google_sheets_error(response, action)
     return response
 
 
@@ -150,141 +144,141 @@ def _normalise_header(value: Any) -> str:
     return re.sub(r"[\s_-]+", "", str(value or "").strip().casefold())
 
 
-def _find_workbook_header(workbook: Any) -> tuple[Any, int, dict[str, int], bool]:
+def _find_sheet_header(
+    values: list[list[Any]],
+) -> tuple[int, dict[str, int], bool]:
     required = {_normalise_header(name) for name in WORKBOOK_COLUMNS[:-1]}
-    matches: list[tuple[Any, int, dict[str, int]]] = []
-    for worksheet in workbook.worksheets:
-        for row_number in range(1, worksheet.max_row + 1):
-            headers: dict[str, int] = {}
-            for column_number in range(1, worksheet.max_column + 1):
-                header = _normalise_header(worksheet.cell(row_number, column_number).value)
-                if header and header not in headers:
-                    headers[header] = column_number
-            if required.issubset(headers):
-                matches.append((worksheet, row_number, headers))
+    matches: list[tuple[int, dict[str, int]]] = []
+    for row_index, row in enumerate(values):
+        headers: dict[str, int] = {}
+        for column_index, value in enumerate(row):
+            header = _normalise_header(value)
+            if header and header not in headers:
+                headers[header] = column_index
+        if required.issubset(headers):
+            matches.append((row_index, headers))
     if not matches:
         has_existing_data = any(
-            cell.value not in (None, "")
-            for worksheet in workbook.worksheets
-            for row in worksheet.iter_rows()
-            for cell in row
+            value not in (None, "")
+            for row in values
+            for value in row
         )
         if not has_existing_data:
-            worksheet = workbook.active
-            headers: dict[str, int] = {}
-            for column_number, name in enumerate(WORKBOOK_COLUMNS, start=1):
-                _set_text(worksheet.cell(1, column_number), name)
-                headers[_normalise_header(name)] = column_number
-            return worksheet, 1, headers, True
+            return 0, {
+                _normalise_header(name): column_index
+                for column_index, name in enumerate(WORKBOOK_COLUMNS)
+            }, True
         expected = ", ".join(WORKBOOK_COLUMNS[:-1])
         raise WorkbookExportError(
-            f"Could not find a worksheet row with the required headers: {expected}. "
-            "Headers were not created because the workbook already contains data."
+            f"Could not find a row with the required headers: {expected}. "
+            "Headers were not created because the sheet already contains data."
         )
     if len(matches) > 1:
         raise WorkbookExportError(
-            "More than one worksheet header row matches the expected columns; no workbook changes were made."
+            "More than one row matches the expected headers; no sheet changes were made."
         )
-    worksheet, header_row, headers = matches[0]
-    return worksheet, header_row, headers, False
+    header_row, headers = matches[0]
+    return header_row, headers, False
 
 
-def _set_text(cell: Any, value: Any) -> None:
-    cell.value = "" if value is None else str(value)
-    cell.data_type = "s"
+def _sheet_cell(value: Any) -> dict[str, dict[str, str]]:
+    return {"userEnteredValue": {"stringValue": "" if value is None else str(value)}}
 
 
-def _table_for_header(worksheet: Any, header_row: int, columns: dict[str, int]) -> Any:
-    required_columns = [
-        columns[_normalise_header(name)] for name in WORKBOOK_COLUMNS[:-1]
-    ]
-    for table in worksheet.tables.values():
-        min_column, min_row, max_column, _ = range_boundaries(table.ref)
-        if (
-            min_row == header_row
-            and min_column <= min(required_columns)
-            and max_column >= max(required_columns)
-        ):
-            return table
-    return None
-
-
-def append_results_to_google_drive(
+def append_results_to_google_sheet(
     records: dict[str, dict[str, str]],
     results: list[dict[str, Any]],
 ) -> tuple[int, int]:
-    token = _google_drive_access_token()
-    file_id = quote(GOOGLE_DRIVE_FILE_ID, safe="")
-    metadata_url = f"{GOOGLE_DRIVE_API_URL}/files/{file_id}"
+    token = _google_sheets_access_token()
+    spreadsheet_id = quote(GOOGLE_SHEET_ID, safe="")
+    spreadsheet_url = f"{GOOGLE_SHEETS_API_URL}/spreadsheets/{spreadsheet_id}"
+    escaped_sheet_name = GOOGLE_SHEET_NAME.replace("'", "''")
+    values_range = quote(f"'{escaped_sheet_name}'!A:AZ", safe="!:$'")
 
     with _workbook_write_lock:
         try:
-            metadata_response = _google_drive_request(
+            spreadsheet = _google_sheets_request(
                 "GET",
-                metadata_url,
+                spreadsheet_url,
                 token,
-                "locate workbook",
-                params={"fields": "id,name,mimeType,version"},
-            )
-            item = metadata_response.json()
+                "read spreadsheet metadata",
+                params={"fields": "sheets(properties(sheetId,title))"},
+            ).json()
         except ValueError as exc:
-            raise WorkbookExportError("Google Drive returned invalid workbook metadata.") from exc
-        try:
-            item_id = item["id"]
-            mime_type = item["mimeType"]
-            file_version = item["version"]
-        except (KeyError, TypeError) as exc:
-            raise WorkbookExportError("Google Drive returned incomplete workbook metadata.") from exc
-        if mime_type != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-            raise WorkbookExportError(
-                "The Google Drive file must be an uploaded .xlsx workbook, not a native Google Sheet or another file type."
-            )
-        content_url = f"{GOOGLE_DRIVE_API_URL}/files/{quote(item_id, safe='')}"
-        content_response = _google_drive_request(
-            "GET",
-            content_url,
-            token,
-            "download workbook",
-            params={"alt": "media"},
+            raise WorkbookExportError("Google Sheets returned invalid spreadsheet metadata.") from exc
+        sheets = spreadsheet.get("sheets", [])
+        sheet = next(
+            (
+                item.get("properties", {})
+                for item in sheets
+                if item.get("properties", {}).get("title") == GOOGLE_SHEET_NAME
+            ),
+            None,
         )
-        try:
-            workbook = load_workbook(io.BytesIO(content_response.content))
-        except (BadZipFile, InvalidFileException, OSError, ParseError, TypeError, ValueError) as exc:
+        if sheet is None:
             raise WorkbookExportError(
-                "The Google Drive file could not be opened as a standard .xlsx workbook."
-            ) from exc
+                f'The spreadsheet does not contain a tab named "{GOOGLE_SHEET_NAME}".'
+            )
+        try:
+            sheet_id = sheet["sheetId"]
+        except KeyError as exc:
+            raise WorkbookExportError("Google Sheets returned incomplete tab metadata.") from exc
 
-        worksheet, header_row, headers, headers_created = _find_workbook_header(workbook)
+        try:
+            sheet_data = _google_sheets_request(
+                "GET",
+                f"{spreadsheet_url}/values/{values_range}",
+                token,
+                "read worksheet data",
+            ).json()
+        except ValueError as exc:
+            raise WorkbookExportError("Google Sheets returned invalid worksheet data.") from exc
+        values = sheet_data.get("values", [])
+        header_row, headers, headers_created = _find_sheet_header(values)
         response_key = _normalise_header("Response")
-        workbook_changed = headers_created or response_key not in headers
+        requests_to_apply: list[dict[str, Any]] = []
+        if headers_created:
+            requests_to_apply.append(
+                {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "startColumnIndex": 0,
+                        },
+                        "rows": [
+                            {"values": [_sheet_cell(name) for name in WORKBOOK_COLUMNS]}
+                        ],
+                        "fields": "userEnteredValue",
+                    }
+                }
+            )
         response_added = response_key not in headers
         if response_added:
-            response_column = max(headers.values()) + 1
-            if response_column > 16384:
-                raise WorkbookExportError("There is no available Excel column for the Response field.")
+            response_column = max(headers.values(), default=-1) + 1
             headers[response_key] = response_column
-            header_cell = worksheet.cell(header_row, response_column)
-            _set_text(header_cell, "Response")
-            status_column = headers.get(_normalise_header("Status"))
-            if status_column:
-                source_style = worksheet.cell(header_row, status_column)
-                if source_style.has_style:
-                    header_cell._style = copy(source_style._style)
-                header_cell.number_format = source_style.number_format
+            if not headers_created:
+                requests_to_apply.append(
+                    {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": header_row,
+                                "startColumnIndex": response_column,
+                            },
+                            "rows": [{"values": [_sheet_cell("Response")]}],
+                            "fields": "userEnteredValue",
+                        }
+                    }
+                )
 
         guid_column = headers[_normalise_header("serviceguid")]
         existing_rows: dict[str, int] = {}
-        last_data_row = header_row
-        for row_number in range(header_row + 1, worksheet.max_row + 1):
-            row_has_data = any(
-                worksheet.cell(row_number, column_number).value not in (None, "")
-                for column_number in range(1, worksheet.max_column + 1)
-            )
-            if row_has_data:
-                last_data_row = row_number
-            guid_value = worksheet.cell(row_number, guid_column).value
+        for row_index in range(header_row + 1, len(values)):
+            row = values[row_index]
+            guid_value = row[guid_column] if guid_column < len(row) else ""
             if guid_value not in (None, ""):
-                existing_rows.setdefault(str(guid_value).strip().casefold(), row_number)
+                existing_rows.setdefault(str(guid_value).strip().casefold(), row_index)
 
         new_rows: list[tuple[dict[str, str], dict[str, Any]]] = []
         existing_updates: list[tuple[int, dict[str, Any]]] = []
@@ -304,20 +298,28 @@ def append_results_to_google_drive(
             new_rows.append((records.get(normalized_guid, {}), result))
 
         for target_row, result in existing_updates:
-            output_values = {
-                _normalise_header("Status"): (
-                    "Successfully" if result.get("Status") == "Success" else "Failed"
-                ),
-                response_key: result.get("Response", ""),
-            }
-            for normalized_header, value in output_values.items():
-                _set_text(worksheet.cell(target_row, headers[normalized_header]), value)
-            workbook_changed = True
+            status_value = "Successfully" if result.get("Status") == "Success" else "Failed"
+            for header, value in (
+                ("Status", status_value),
+                ("Response", result.get("Response", "")),
+            ):
+                requests_to_apply.append(
+                    {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": target_row,
+                                "startColumnIndex": headers[_normalise_header(header)],
+                            },
+                            "rows": [{"values": [_sheet_cell(value)]}],
+                            "fields": "userEnteredValue",
+                        }
+                    }
+                )
 
+        row_width = max(headers.values(), default=-1) + 1
+        appended_rows = []
         for metadata, result in new_rows:
-            target_row = last_data_row + 1
-            if target_row > 1_048_576:
-                raise WorkbookExportError("The worksheet has no remaining rows for new records.")
             output_values = {
                 _normalise_header("Date"): metadata.get("date", ""),
                 _normalise_header("serviceguid"): result.get("serviceGUID", ""),
@@ -331,77 +333,28 @@ def append_results_to_google_drive(
                 ),
                 response_key: result.get("Response", ""),
             }
+            row = [""] * row_width
             for normalized_header, value in output_values.items():
-                column_number = headers[normalized_header]
-                cell = worksheet.cell(target_row, column_number)
-                if last_data_row > header_row:
-                    source = worksheet.cell(last_data_row, column_number)
-                    if source.has_style:
-                        cell._style = copy(source._style)
-                    cell.number_format = source.number_format
-                _set_text(cell, value)
-            last_data_row = target_row
-            workbook_changed = True
+                row[headers[normalized_header]] = "" if value is None else str(value)
+            appended_rows.append({"values": [_sheet_cell(value) for value in row]})
 
-        table = _table_for_header(worksheet, header_row, headers)
-        if table and workbook_changed:
-            min_column, min_row, max_column, _ = range_boundaries(table.ref)
-            new_max_column = max(max_column, headers[response_key])
-            if new_max_column > max_column:
-                if headers[response_key] != max_column + 1:
-                    raise WorkbookExportError(
-                        "The Response column must immediately follow the existing Excel table columns."
-                    )
-                from openpyxl.worksheet.table import TableColumn
-
-                table.tableColumns.append(
-                    TableColumn(id=len(table.tableColumns) + 1, name="Response")
-                )
-            table.ref = (
-                f"{get_column_letter(min_column)}{min_row}:"
-                f"{get_column_letter(new_max_column)}{last_data_row}"
+        if appended_rows:
+            requests_to_apply.append(
+                {
+                    "appendCells": {
+                        "sheetId": sheet_id,
+                        "rows": appended_rows,
+                        "fields": "userEnteredValue",
+                    }
+                }
             )
-            if table.autoFilter:
-                table.autoFilter.ref = table.ref
-
-        if workbook_changed:
-            output = io.BytesIO()
-            try:
-                workbook.save(output)
-            except (OSError, TypeError, ValueError) as exc:
-                raise WorkbookExportError("The updated Excel workbook could not be prepared for upload.") from exc
-
-            upload_headers = {
-                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            }
-            etag = metadata_response.headers.get("ETag")
-            if etag:
-                upload_headers["If-Match"] = etag
-            else:
-                try:
-                    latest = _google_drive_request(
-                        "GET",
-                        metadata_url,
-                        token,
-                        "verify workbook has not changed",
-                        params={"fields": "version"},
-                    ).json()
-                except ValueError as exc:
-                    raise WorkbookExportError(
-                        "Google Drive returned invalid workbook version metadata."
-                    ) from exc
-                if str(latest.get("version")) != str(file_version):
-                    raise WorkbookExportError(
-                        "The workbook changed while records were being prepared; no upload was made. Retry the save."
-                    )
-            _google_drive_request(
-                "PATCH",
-                f"{GOOGLE_DRIVE_UPLOAD_URL}/files/{quote(item_id, safe='')}",
+        if requests_to_apply:
+            _google_sheets_request(
+                "POST",
+                f"{spreadsheet_url}:batchUpdate",
                 token,
-                "save workbook",
-                params={"uploadType": "media"},
-                headers=upload_headers,
-                data=output.getvalue(),
+                "save worksheet changes",
+                json={"requests": requests_to_apply},
             )
         return len(new_rows), updated
 
@@ -605,9 +558,9 @@ def run_job(job_id: str) -> None:
         if save_to_workbook:
             job["workbook_status"] = "saving"
     if save_to_workbook:
-        job["status_message"] = "Processing complete. Saving records to Google Drive..."
+        job["status_message"] = "Processing complete. Saving records to Google Sheets..."
         try:
-            added, updated = append_results_to_google_drive(job.get("records", {}), job["results"])
+            added, updated = append_results_to_google_sheet(job.get("records", {}), job["results"])
             job["workbook_status"] = "saved"
             job["workbook_added"] = added
             job["workbook_updated"] = updated
