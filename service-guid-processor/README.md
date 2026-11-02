@@ -76,7 +76,9 @@ generated token is separate from the service API bearer token.
 
 To start the local helper automatically at Windows sign-in, run
 `.\install-azure-token-helper.ps1` once from PowerShell in this project folder.
-Run `.\install-azure-token-helper.ps1 -Uninstall` to remove the startup task.
+This creates a per-user Windows Startup shortcut and starts a supervisor that
+restarts the helper if it exits. Run
+`.\install-azure-token-helper.ps1 -Uninstall` to remove the startup shortcut.
 Azure CLI and this PC must be available and signed in before token generation
 can work from the live site. Startup output is written to
 `results\azure-token-helper.log`.
