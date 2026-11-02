@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -43,6 +44,11 @@ REQUEST_TIMEOUT = (10, 30)   # (connect_timeout, read_timeout)
 DELAY_SECONDS = 2
 GOOGLE_SHEETS_API_URL = "https://sheets.googleapis.com/v4"
 GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+AZURE_TOKEN_ALLOWED_ORIGINS = (
+    "https://service-guid-processor.onrender.com",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+)
 WORKBOOK_COLUMNS = (
     "Date",
     "serviceguid",
@@ -77,6 +83,13 @@ def _make_session() -> requests.Session:
     return session
 
 app = FastAPI(title="Service GUID Processor")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(AZURE_TOKEN_ALLOWED_ORIGINS),
+    allow_methods=["POST"],
+    allow_headers=["*"],
+    allow_private_network=True,
+)
 app.mount("/templates", StaticFiles(directory=os.path.join(BASE_DIR, "templates")), name="templates")
 jobs: dict[str, dict[str, Any]] = {}
 
@@ -1084,6 +1097,12 @@ def generate_azure_token(request: Request) -> dict[str, str]:
         raise HTTPException(
             status_code=403,
             detail="Azure CLI token generation is available only from this computer.",
+        )
+    origin = request.headers.get("origin")
+    if origin and origin not in AZURE_TOKEN_ALLOWED_ORIGINS:
+        raise HTTPException(
+            status_code=403,
+            detail="This website is not allowed to request a local Azure CLI token.",
         )
 
     try:

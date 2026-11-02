@@ -559,7 +559,10 @@
     button.disabled = true;
     button.textContent = "Generating...";
     try {
-      const response = await fetch("/api/azure-token", { method: "POST" });
+      const tokenUrl = location.hostname === "service-guid-processor.onrender.com"
+        ? "http://127.0.0.1:8000/api/azure-token"
+        : "/api/azure-token";
+      const response = await fetch(tokenUrl, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not generate Azure Token.");
       if (typeof data.access_token !== "string" || !data.access_token) {
@@ -568,7 +571,10 @@
       $("azure-token").value = data.access_token;
       $("copy-azure-token").disabled = false;
     } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not generate Azure Token.");
+      const message = error instanceof TypeError
+        ? "Could not reach the Azure CLI on this PC. Start the local app at http://127.0.0.1:8000, then try again."
+        : error instanceof Error ? error.message : "Could not generate Azure Token.";
+      showError(message);
     } finally {
       button.disabled = false;
       button.textContent = "Generate Azure Token";

@@ -67,11 +67,12 @@ also be the same token used by that script; save it in the page before starting
 a job.
 
 To use **Generate Azure Token**, install Azure CLI and run `az login` in CMD on
-the same computer as the local app. The button runs
-`az account get-access-token --resource-type oss-rdbms` and displays the
-returned access token. This feature is limited to local requests and is not
-available when the app is deployed on Render. The generated token is separate
-from the service API bearer token.
+the computer whose browser you are using. Keep the local app running at
+`http://127.0.0.1:8000`; when the page is opened from Render, the browser
+requests a token from that local app, which runs
+`az account get-access-token --resource-type oss-rdbms`. The local app accepts
+this request only from the configured Render site or its own local page. The
+generated token is separate from the service API bearer token.
 
 Paste one serviceGUID per line into the page. The web app sends the same POST URL, query parameters, JSON payload, and
 `Authorization: Bearer <token>` header as the script. If the API returns
