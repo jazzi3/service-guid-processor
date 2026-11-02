@@ -82,7 +82,7 @@
   #dashboard-message { min-height:22px; margin:0 0 8px; color:var(--muted); }
   #dashboard-message.error-text { color:var(--bad); }
   .pivot-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
-  .pivot-grid table, .report-grid table { width:100%; min-width:0; table-layout:auto; }
+  .pivot-grid table { width:100%; min-width:0; table-layout:auto; }
   .pivot-grid th, .pivot-grid td { text-align:right; white-space:normal; overflow-wrap:anywhere; }
   .pivot-grid th:first-child, .pivot-grid td:first-child { position:sticky; left:0; text-align:left; background:var(--surface); z-index:1; }
   .pivot-grid thead th:first-child { background:var(--soft); z-index:2; }
@@ -91,7 +91,16 @@
   .pivot-grid tfoot td:first-child { background:var(--primary-soft); z-index:2; }
   .pivot-grid .empty-pivot { text-align:center; color:var(--muted); padding:28px; }
   .report-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
-  .report-grid th, .report-grid td { min-width:0; max-width:none; padding:5px 7px; white-space:pre-wrap; overflow-wrap:anywhere; vertical-align:top; }
+  .report-grid table { width:100%; min-width:0; table-layout:fixed; }
+  .report-grid th, .report-grid td { min-width:0; max-width:none; padding:5px 7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:top; }
+  .report-grid th:nth-child(1) { width:8%; }
+  .report-grid th:nth-child(2) { width:16%; }
+  .report-grid th:nth-child(3) { width:13%; }
+  .report-grid th:nth-child(4), .report-grid th:nth-child(5) { width:10%; }
+  .report-grid th:nth-child(6) { width:12%; }
+  .report-grid th:nth-child(7) { width:15%; }
+  .report-grid th:nth-child(8) { width:10%; }
+  .report-grid th:nth-child(9) { width:6%; }
   .report-grid .empty-report { text-align:center; color:var(--muted); padding:28px; }
   .table-state { text-align:center; color:var(--muted); padding:24px !important; }
   .table-state.error-text { color:var(--bad); }
