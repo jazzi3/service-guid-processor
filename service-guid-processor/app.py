@@ -1,9 +1,11 @@
 import asyncio
 import csv
+import ipaddress
 import io
 import json
 import os
 import re
+import subprocess
 import tempfile
 import threading
 import uuid
@@ -20,7 +22,7 @@ from google.oauth2.service_account import Credentials
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, HTTPException, WebSocket
+from fastapi import FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -1069,6 +1071,63 @@ async def index() -> FileResponse:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/azure-token")
+def generate_azure_token(request: Request) -> dict[str, str]:
+    client_host = request.client.host if request.client else ""
+    try:
+        is_local_request = ipaddress.ip_address(client_host).is_loopback
+    except ValueError:
+        is_local_request = False
+    if not is_local_request:
+        raise HTTPException(
+            status_code=403,
+            detail="Azure CLI token generation is available only from this computer.",
+        )
+
+    try:
+        result = subprocess.run(
+            "az account get-access-token --resource-type oss-rdbms",
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Azure CLI was not found. Install Azure CLI and run 'az login' in CMD.",
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Azure CLI token generation timed out.",
+        ) from exc
+
+    if result.returncode:
+        detail = result.stderr.strip()
+        raise HTTPException(
+            status_code=502,
+            detail=detail or "Azure CLI could not generate a token. Run 'az login' in CMD and try again.",
+        )
+
+    try:
+        data = json.loads(result.stdout)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Azure CLI returned an invalid response.",
+        ) from exc
+
+    access_token = data.get("accessToken") if isinstance(data, dict) else None
+    if not isinstance(access_token, str) or not access_token:
+        raise HTTPException(
+            status_code=502,
+            detail="Azure CLI response did not contain an access token.",
+        )
+    return {"access_token": access_token}
 
 
 @app.get("/api/dashboard")

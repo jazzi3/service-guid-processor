@@ -14,6 +14,7 @@ It supports:
 - Automatic Google Sheets save after processing: new serviceGUIDs are appended, while existing GUID rows keep their metadata and have Status/Response refreshed
 - Failure dashboard with inclusive Date From/Date To filters and a dynamic pivot table of trimmed failure reasons, daily totals, and grand totals
 - Report view with date-filtered Google Sheets rows and an Excel workbook download
+- Azure access-token generation using the local Azure CLI account
 
 ## Run on localhost (Windows)
 
@@ -64,6 +65,13 @@ credentials, so both flows use the same endpoint. Otherwise configure
 `API_URL`, `API_USERNAME`, and `API_PASSWORD` in `.env`. The bearer token must
 also be the same token used by that script; save it in the page before starting
 a job.
+
+To use **Generate Azure Token**, install Azure CLI and run `az login` in CMD on
+the same computer as the local app. The button runs
+`az account get-access-token --resource-type oss-rdbms` and displays the
+returned access token. This feature is limited to local requests and is not
+available when the app is deployed on Render. The generated token is separate
+from the service API bearer token.
 
 Paste one serviceGUID per line into the page. The web app sends the same POST URL, query parameters, JSON payload, and
 `Authorization: Bearer <token>` header as the script. If the API returns

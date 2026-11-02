@@ -28,6 +28,7 @@
   .g-auth { flex:1 1 440px; min-width:0; } .codes { display:grid; grid-template-columns:repeat(3,112px); gap:10px; }
   label { display:block; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#9fb0d6; margin:0 0 6px; }
   .token-wrap { display:flex; gap:8px; align-items:center; } .token-wrap input { flex:1; min-width:0; }
+  .azure-token-wrap { display:flex; gap:8px; align-items:center; } .azure-token-wrap input { flex:1; min-width:0; }
   .hero input { background:#ffffff14; border-color:#ffffff26; color:#fff; } .hero input::placeholder { color:#8190b4; }
   .hero input:focus { border-color:#8da2ff; box-shadow:0 0 0 3px #4361ee55; } .hero .codes input[readonly] { color:#c7d2f0; background:#ffffff0a; }
   #token.auth-expired { color:#ffb4ab; border-color:var(--bad); background:#dc262633; }
@@ -153,6 +154,18 @@
         </button>
         <button type="button" id="save-token">Save token</button>
         <span class="pill" id="token-pill">Not saved</span>
+      </div>
+      <label for="azure-token" style="margin-top:12px">Azure Token</label>
+      <div class="azure-token-wrap">
+        <input id="azure-token" type="password" autocomplete="off" placeholder="Generate Azure token">
+        <button type="button" id="toggle-azure-token" class="icon" aria-label="Show Azure token" aria-pressed="false" title="Show Azure token">
+          <svg id="show-azure-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <svg id="hide-azure-token-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m3 3 18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3 3.8"></path><path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8"></path></svg>
+        </button>
+        <button type="button" id="copy-azure-token" class="icon" aria-label="Copy Azure token" title="Copy Azure token" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path></svg>
+        </button>
+        <button type="button" id="generate-azure-token">Generate Azure Token</button>
       </div>
     </div>
     <div class="codes">
@@ -541,6 +554,48 @@
   }
 
   $("save-token").onclick = () => { const t = $("token").value.trim(); if (!t) return showError("Enter a token before saving it."); store.set("service-guid-bearer-token", t); updateTokenPill(); showToast("Token saved for future requests."); };
+  $("generate-azure-token").onclick = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Generating...";
+    try {
+      const response = await fetch("/api/azure-token", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not generate Azure Token.");
+      if (typeof data.access_token !== "string" || !data.access_token) {
+        throw new Error("The Azure token response did not contain an access token.");
+      }
+      $("azure-token").value = data.access_token;
+      $("copy-azure-token").disabled = false;
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Could not generate Azure Token.");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Generate Azure Token";
+    }
+  };
+  $("toggle-azure-token").onclick = () => {
+    const visible = $("azure-token").type === "password";
+    $("azure-token").type = visible ? "text" : "password";
+    $("toggle-azure-token").setAttribute("aria-pressed", String(visible));
+    $("toggle-azure-token").setAttribute("aria-label", `${visible ? "Hide" : "Show"} Azure token`);
+    $("toggle-azure-token").title = `${visible ? "Hide" : "Show"} Azure token`;
+    $("show-azure-token-icon").hidden = visible;
+    $("hide-azure-token-icon").hidden = !visible;
+  };
+  $("copy-azure-token").onclick = async () => {
+    const token = $("azure-token").value;
+    if (!token) return showError("Generate an Azure token before copying it.");
+    try {
+      await navigator.clipboard.writeText(token);
+      showToast("Azure token copied to clipboard.");
+    } catch (error) {
+      showError(error instanceof Error ? `Could not copy Azure token: ${error.message}` : "Could not copy Azure token.");
+    }
+  };
+  $("azure-token").addEventListener("input", () => {
+    $("copy-azure-token").disabled = !$("azure-token").value;
+  });
   $("token").value = store.get("service-guid-bearer-token") || ""; updateTokenPill();
   $("token").addEventListener("input", () => setTokenExpired(false));
   $("toggle-token").onclick = () => {
