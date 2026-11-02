@@ -82,8 +82,8 @@
   #dashboard-message { min-height:22px; margin:0 0 8px; color:var(--muted); }
   #dashboard-message.error-text { color:var(--bad); }
   .pivot-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
-  .pivot-grid table { min-width:max-content; }
-  .pivot-grid th, .pivot-grid td { text-align:right; white-space:nowrap; }
+  .pivot-grid table, .report-grid table { width:100%; min-width:0; table-layout:auto; }
+  .pivot-grid th, .pivot-grid td { text-align:right; white-space:normal; overflow-wrap:anywhere; }
   .pivot-grid th:first-child, .pivot-grid td:first-child { position:sticky; left:0; text-align:left; background:var(--surface); z-index:1; }
   .pivot-grid thead th:first-child { background:var(--soft); z-index:2; }
   .pivot-grid tfoot { font-weight:800; background:var(--primary-soft); }
@@ -91,7 +91,6 @@
   .pivot-grid tfoot td:first-child { background:var(--primary-soft); z-index:2; }
   .pivot-grid .empty-pivot { text-align:center; color:var(--muted); padding:28px; }
   .report-grid { border:1px solid var(--line); border-radius:14px; overflow:auto; max-height:calc(100vh - 360px); min-height:180px; }
-  .report-grid table { width:100%; min-width:960px; table-layout:fixed; }
   .report-grid th, .report-grid td { min-width:0; max-width:none; padding:5px 7px; white-space:pre-wrap; overflow-wrap:anywhere; vertical-align:top; }
   .report-grid .empty-report { text-align:center; color:var(--muted); padding:28px; }
   .table-state { text-align:center; color:var(--muted); padding:24px !important; }
@@ -108,12 +107,12 @@
   th { background:var(--soft); position:sticky; top:0; z-index:1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); white-space:nowrap; }
   tbody tr:hover { background:var(--soft); } tbody tr:last-child td { border-bottom:0; }
   tr[data-ok="1"] td:first-child { box-shadow:inset 3px 0 var(--ok); } tr[data-ok="0"] td:first-child { box-shadow:inset 3px 0 var(--bad); }
-  table { table-layout:fixed; } th, td { padding:4px 8px; overflow:hidden; } th { padding:6px 8px; white-space:normal; overflow-wrap:anywhere; }
-  th:nth-child(1) { width:8%; } th:nth-child(2) { width:16%; }
-  th:nth-child(3) { width:12%; } th:nth-child(4), th:nth-child(5) { width:8%; }
-  th:nth-child(6) { width:11%; } th:nth-child(7) { width:12%; }
-  th:nth-child(8) { width:7%; } th:nth-child(9) { width:18%; }
-  @media (max-width:1000px) { table { min-width:960px; } }
+  .grid table { table-layout:fixed; } .grid th, .grid td { padding:4px 8px; overflow:hidden; } .grid th { padding:6px 8px; white-space:normal; overflow-wrap:anywhere; }
+  .grid th:nth-child(1) { width:8%; } .grid th:nth-child(2) { width:16%; }
+  .grid th:nth-child(3) { width:12%; } .grid th:nth-child(4), .grid th:nth-child(5) { width:8%; }
+  .grid th:nth-child(6) { width:11%; } .grid th:nth-child(7) { width:12%; }
+  .grid th:nth-child(8) { width:7%; } .grid th:nth-child(9) { width:18%; }
+  @media (max-width:1000px) { .grid table { min-width:960px; } }
   .grid td input { padding:3px 6px; border:1px solid transparent; border-radius:8px; background:transparent; font:12.5px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow:ellipsis; min-width:0; }
   .grid td input[readonly] { cursor:default; box-shadow:none; }
   .grid td input.editable { background:var(--primary-soft); border:1px dashed var(--primary); cursor:text; } .grid td input.editable:focus { background:var(--surface); }
@@ -312,19 +311,22 @@
   }
   function renderReport(data) {
     const head = $("report-table").tHead, body = $("report-table").tBodies[0];
+    const columns = data.headers
+      .map((value, index) => ({ value, index }))
+      .filter(({ value }) => String(value).trim().toLowerCase() !== "response");
     head.replaceChildren(); body.replaceChildren();
     $("report-table").setAttribute("aria-busy", "false");
     const header = document.createElement("tr");
-    data.headers.forEach(value => appendPivotCell(header, value, "th"));
+    columns.forEach(({ value }) => appendPivotCell(header, value, "th"));
     head.appendChild(header);
     data.rows.forEach(values => {
       const row = document.createElement("tr");
-      values.forEach(value => appendPivotCell(row, value ?? ""));
+      columns.forEach(({ index }) => appendPivotCell(row, values[index] ?? ""));
       body.appendChild(row);
     });
     if (!data.rows.length) {
       const row = document.createElement("tr"), cell = appendPivotCell(row, "No records for the selected date range.");
-      cell.colSpan = Math.max(data.headers.length, 1); cell.className = "empty-report"; body.appendChild(row);
+      cell.colSpan = Math.max(columns.length, 1); cell.className = "empty-report"; body.appendChild(row);
     }
     $("report-count").textContent = `${data.record_count} record(s)`;
   }

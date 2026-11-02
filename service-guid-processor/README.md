@@ -147,8 +147,9 @@ CSV when configured) and refreshes after a processing batch is saved.
 
 ### Report
 
-Select **Report** to see all configured data-source columns and rows for a
-date range. Columns are constrained to the table width, with long values
-wrapping as needed. Both filters default to the current local date, and
-changing either filter reloads the report with a loading indicator.
-**Download Excel** exports the selected range as an `.xlsx` workbook.
+Select **Report** to see configured data-source rows for a date range. The
+table fits the available width with long headers and values wrapping as
+needed; the `Response` column is omitted from the on-screen table.
+Both filters default to the current local date, and changing either filter
+reloads the report with a loading indicator. **Download Excel** exports the
+selected range as an `.xlsx` workbook.
