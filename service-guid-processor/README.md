@@ -74,6 +74,13 @@ requests a token from that local app, which runs
 this request only from the configured Render site or its own local page. The
 generated token is separate from the service API bearer token.
 
+To start the local helper automatically at Windows sign-in, run
+`.\install-azure-token-helper.ps1` once from PowerShell in this project folder.
+Run `.\install-azure-token-helper.ps1 -Uninstall` to remove the startup task.
+Azure CLI and this PC must be available and signed in before token generation
+can work from the live site. Startup output is written to
+`results\azure-token-helper.log`.
+
 Paste one serviceGUID per line into the page. The web app sends the same POST URL, query parameters, JSON payload, and
 `Authorization: Bearer <token>` header as the script. If the API returns
 `"User is not allowed to perform this action"`, the API username/password or
